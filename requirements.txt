@@ -1,0 +1,32 @@
+# Core GUI — PySide6 6.10+ supports Python 3.14
+PySide6==6.10.3
+
+# Database
+SQLAlchemy==2.1.1
+alembic==1.13.2
+
+# Configuration
+python-dotenv==1.0.1
+
+# Media / Recording
+opencv-python==5.0.0.93
+sounddevice==0.5.6
+numpy==2.4.3
+
+# Transcription (local, CPU-friendly)
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+
+# AI Feedback Engine (optional — app works without this)
+openai==3.19.2
+
+# Charting (future use)
+matplotlib==3.10.3
+pyqtgraph==0.13.7
+
+# Testing
+pytest==8.3.2
+pytest-cov==5.0.0
+
+# Utilities
+Pillow==11.2.1

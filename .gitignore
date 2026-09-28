@@ -1,0 +1,62 @@
+# ── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+MANIFEST
+
+# ── Virtual environments ─────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.env/
+
+# ── Environment / secrets ────────────────────────────────────────────────
+# NEVER commit real secrets — keep them in .env only
+.env
+
+# ── SpeakUp runtime data ─────────────────────────────────────────────────
+speakup.db
+speakup.log
+recordings/
+*.mp4
+*.wav
+.speakup_onboarded
+
+# ── PyInstaller build artifacts ──────────────────────────────────────────
+dist/
+build/
+*.spec.bak
+
+# ── pytest / coverage ────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.coveragerc
+
+# ── IDEs ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Jupyter ──────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Logs ─────────────────────────────────────────────────────────────────
+*.log
+
+# ── Faster-whisper model cache ───────────────────────────────────────────
+models/
+~/.cache/huggingface/
