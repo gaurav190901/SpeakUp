@@ -13,6 +13,7 @@ or
 
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 ROOT = Path(SPEC).resolve().parent   # noqa: F821 — PyInstaller injects SPEC
 
@@ -24,6 +25,7 @@ a = Analysis(
     pathex=[str(ROOT)],
     binaries=[],
     datas=[
+        *collect_data_files("faster_whisper"),
         # Include bundled word topics and assets
         (str(ROOT / "speakup" / "data" / "words" / "topics.json"),
          "speakup/data/words"),
@@ -40,6 +42,11 @@ a = Analysis(
         "PySide6.QtMultimedia",
         # matplotlib backend
         "matplotlib.backends.backend_qtagg",
+        # matplotlib dependencies that get missed
+        "pyparsing",
+        "pyparsing.testing",
+        "unittest",
+        "unittest.mock",
         # SQLAlchemy dialects
         "sqlalchemy.dialects.sqlite",
         # faster-whisper / ctranslate2
@@ -57,9 +64,6 @@ a = Analysis(
     excludes=[
         # Exclude things we definitely don't use in production
         "tkinter",
-        "unittest",
-        "test",
-        "doctest",
         "pdb",
         "profile",
         "cProfile",

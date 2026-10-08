@@ -32,6 +32,7 @@ import matplotlib
 matplotlib.use("QtAgg")   # must be set before other matplotlib imports
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -209,7 +210,8 @@ class _MplChartWidget(QWidget):
         self.setObjectName("ChartWidget")
         self._title = title
 
-        self._fig, self._ax = plt.subplots(figsize=(4, 2.1), dpi=90)
+        self._fig = Figure(figsize=(4, 2.1), dpi=90)
+        self._ax = self._fig.add_subplot(111)
         self._fig.patch.set_facecolor(_BG)
         self._ax.set_facecolor(_BG)
 

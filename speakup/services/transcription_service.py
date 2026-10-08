@@ -39,7 +39,6 @@ from typing import Optional
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 from speakup.config.settings import settings
-from speakup.config.settings import settings
 from speakup.services.transcription_providers import (
     BaseTranscriptionProvider,
     TranscriptionError,

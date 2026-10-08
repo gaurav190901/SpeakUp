@@ -93,6 +93,23 @@ class MainWindow(QMainWindow):
         self.resize(settings.WINDOW_DEFAULT_WIDTH, settings.WINDOW_DEFAULT_HEIGHT)
         self.setObjectName("MainWindow")
 
+    def closeEvent(self, event) -> None:
+        """
+        Handle main window close event.
+        Ensures active page worker threads and services (recording camera/mic,
+        transcription workers, analysis threads) are cleanly stopped before exit.
+        """
+        logger.info("MainWindow closing. Cleaning up background services...")
+        try:
+            if hasattr(self, "_recording_page") and self._recording_page:
+                self._recording_page.cleanup()
+            if hasattr(self, "_transcription_page") and self._transcription_page:
+                self._transcription_page.cleanup()
+        except Exception as exc:
+            logger.warning("Error during MainWindow close cleanup: %s", exc)
+
+        super().closeEvent(event)
+
     # ------------------------------------------------------------------ #
     # UI construction                                                       #
     # ------------------------------------------------------------------ #
@@ -351,6 +368,9 @@ class MainWindow(QMainWindow):
         # Release camera/mic resources
         self._recording_page.cleanup()
 
+        # Clear the completed session so Practice is ready when revisited.
+        self._practice_page.on_recording_completed()
+
         # Navigate to transcription page — keep topic from recording page
         topic = self._recording_page._topic or {}
         self._transcription_page.prepare(
@@ -541,7 +561,6 @@ class MainWindow(QMainWindow):
         """User clicked Practice Again on the Results page."""
         logger.info("Practice Again requested from Results page")
         self._navigate_to(PAGE_PRACTICE)
-        self._practice_page.on_recording_completed()
 
     def _on_go_to_dashboard(self) -> None:
         """User clicked Back to Dashboard on the Results page."""

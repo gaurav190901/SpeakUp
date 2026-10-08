@@ -42,6 +42,7 @@ _app = QApplication.instance() or QApplication([])
 # ---------------------------------------------------------------------------
 from speakup.services.recording_service import (  # noqa: E402
     MediaMuxer,
+    RecordingEngine,
     RecordingService,
     RecordingState,
     build_output_path,
@@ -275,6 +276,41 @@ class TestRecordingTimerWidget:
     def test_format_negative_clamped_to_zero(self):
         from speakup.ui.widgets.recording_timer import RecordingTimerWidget
         assert RecordingTimerWidget._format(-5) == "00:00"
+
+
+class TestRecordingEngineControlRequests:
+
+    @pytest.fixture
+    def engine(self):
+        return RecordingEngine(session_id=1, output_path=Path("recording.mp4"))
+
+    def test_start_request_is_processed_by_preview_loop(self, engine):
+        engine._state = RecordingState.READY
+        with patch.object(engine, "_start_capture") as start_capture:
+            engine.start_recording()
+
+            assert engine._start_requested.is_set()
+            assert engine._process_control_requests() is False
+            start_capture.assert_called_once_with()
+            assert engine._start_requested.is_set() is False
+
+    def test_stop_request_is_processed_by_preview_loop(self, engine):
+        engine._state = RecordingState.RECORDING
+        with patch.object(
+            engine, "_finish_capture", side_effect=engine._stop_requested.set
+        ) as finish_capture:
+            engine.stop_recording()
+
+            assert engine._finish_requested.is_set()
+            assert engine._process_control_requests() is True
+            finish_capture.assert_called_once_with()
+            assert engine._finish_requested.is_set() is False
+
+    def test_abandon_request_stops_preview_loop(self, engine):
+        engine.abandon()
+
+        assert engine._process_control_requests() is True
+        assert engine.state == RecordingState.ABANDONED
 
 
 # ===========================================================================

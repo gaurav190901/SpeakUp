@@ -200,6 +200,9 @@ class RecordingEngine(QObject):
 
         self._state: str = RecordingState.IDLE
         self._stop_requested = threading.Event()
+        self._start_requested = threading.Event()
+        self._finish_requested = threading.Event()
+        self._abandon_requested = threading.Event()
         self._recording_start: float | None = None
         self._elapsed_seconds: int = 0
 
@@ -282,6 +285,9 @@ class RecordingEngine(QObject):
         frame_interval = 1.0 / self._FPS
 
         while not self._stop_requested.is_set():
+            if self._process_control_requests():
+                break
+
             t0 = time.perf_counter()
 
             ok, bgr = self._cap.read()
@@ -313,22 +319,41 @@ class RecordingEngine(QObject):
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
+    def _process_control_requests(self) -> bool:
+        """Process recording commands on the same thread that owns the capture."""
+        if self._abandon_requested.is_set():
+            self._set_state(RecordingState.ABANDONED)
+            self._stop_requested.set()
+            return True
+
+        if self._start_requested.is_set():
+            self._start_requested.clear()
+            self._start_capture()
+
+        if self._finish_requested.is_set():
+            self._finish_requested.clear()
+            self._finish_capture()
+
+        return self._stop_requested.is_set()
+
     # ------------------------------------------------------------------ #
-    # Recording control (called from GUI thread via queued connection)     #
+    # Recording control (requested from the GUI thread)                    #
     # ------------------------------------------------------------------ #
 
     @Slot()
     def start_recording(self) -> None:
         """
-        Begin writing frames and audio.  Called from the GUI thread.
-        Transitions READY → RECORDING.
+        Request recording to begin. The preview loop performs capture setup
+        on its own thread.
         """
         if self._state != RecordingState.READY:
             logger.warning(
                 "start_recording called in state %r — ignoring", self._state
             )
             return
+        self._start_requested.set()
 
+    def _start_capture(self) -> None:
         try:
             # Initialise VideoWriter
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -383,15 +408,17 @@ class RecordingEngine(QObject):
     @Slot()
     def stop_recording(self) -> None:
         """
-        Finalise video + audio files and mux them.
-        Transitions RECORDING → STOPPING → COMPLETED (or ERROR).
+        Request recording to stop. The preview loop finalises capture on its
+        own thread.
         """
         if self._state != RecordingState.RECORDING:
             logger.warning(
                 "stop_recording called in state %r — ignoring", self._state
             )
             return
+        self._finish_requested.set()
 
+    def _finish_capture(self) -> None:
         self._set_state(RecordingState.STOPPING)
         duration = int(time.perf_counter() - self._recording_start)
         logger.info("RecordingEngine STOPPING after %ds", duration)
@@ -447,9 +474,7 @@ class RecordingEngine(QObject):
     @Slot()
     def abandon(self) -> None:
         """Abort recording without saving. Cleans up resources."""
-        logger.info("RecordingEngine ABANDONED")
-        self._set_state(RecordingState.ABANDONED)
-        self._stop_requested.set()
+        self._abandon_requested.set()
 
     # ------------------------------------------------------------------ #
     # Cleanup                                                               #
@@ -607,13 +632,7 @@ class RecordingService:
         """
         if not self._engine:
             raise RuntimeError("RecordingService not initialised.")
-        # Use a direct call instead of signal/slot to invoke on engine's thread
-        from PySide6.QtCore import QMetaObject, Qt
-        QMetaObject.invokeMethod(
-            self._engine,
-            "start_recording",
-            Qt.ConnectionType.QueuedConnection,
-        )
+        self._engine.start_recording()
 
     def stop_recording(self) -> Path | None:
         """
@@ -622,24 +641,14 @@ class RecordingService:
         """
         if not self._engine:
             return None
-        from PySide6.QtCore import QMetaObject, Qt
-        QMetaObject.invokeMethod(
-            self._engine,
-            "stop_recording",
-            Qt.ConnectionType.QueuedConnection,
-        )
+        self._engine.stop_recording()
         return self._output_path
 
     def abandon(self) -> None:
         """Abort without saving.  Cleans up resources."""
         if not self._engine:
             return
-        from PySide6.QtCore import QMetaObject, Qt
-        QMetaObject.invokeMethod(
-            self._engine,
-            "abandon",
-            Qt.ConnectionType.QueuedConnection,
-        )
+        self._engine.abandon()
         # Give the thread a moment to process the quit
         if self._thread and self._thread.isRunning():
             self._thread.quit()
@@ -648,10 +657,7 @@ class RecordingService:
     def release(self) -> None:
         """Tear down the engine and thread cleanly."""
         if self._engine:
-            try:
-                self._engine.abandon()
-            except Exception:
-                pass
+            self._engine.abandon()
         if self._thread and self._thread.isRunning():
             self._thread.quit()
             self._thread.wait(3000)

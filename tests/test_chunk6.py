@@ -24,6 +24,8 @@ Covers:
 from __future__ import annotations
 
 import os
+from unittest.mock import patch
+
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -527,6 +529,32 @@ class TestMainWindowResults:
         win = MainWindow(user_name="Test")
         assert hasattr(win, "_on_practice_again")
         assert callable(win._on_practice_again)
+
+    def test_completed_session_resets_practice_before_transcription(self):
+        from speakup.ui.main_window import MainWindow
+        win = MainWindow(user_name="Test")
+        with patch("speakup.ui.main_window.WordService") as word_service, \
+             patch.object(win._recording_page, "cleanup"), \
+             patch.object(win._transcription_page, "prepare"), \
+             patch.object(win._practice_page, "on_recording_completed") as reset:
+            win._on_session_completed(12, 75, "recording.mp4")
+
+        word_service.return_value.complete_practice.assert_called_once_with(
+            session_id=12,
+            duration_seconds=75,
+            recording_path="recording.mp4",
+        )
+        reset.assert_called_once_with()
+
+    def test_practice_again_only_navigates(self):
+        from speakup.ui.main_window import MainWindow
+        win = MainWindow(user_name="Test")
+        with patch.object(win, "_navigate_to") as navigate, \
+             patch.object(win._practice_page, "on_recording_completed") as reset:
+            win._on_practice_again()
+
+        navigate.assert_called_once()
+        reset.assert_not_called()
 
     def test_on_go_to_dashboard_handler_exists(self):
         from speakup.ui.main_window import MainWindow
