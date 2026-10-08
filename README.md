@@ -10,6 +10,7 @@ Record yourself speaking about a topic, get an AI transcript, and receive detail
 | Feature | Status |
 |---|---|
 | Random topic assignment (140 topics, 14 categories) | ✅ |
+| Local email/password accounts with separate progress | ✅ |
 | Camera + microphone recording | ✅ |
 | Local speech transcription (faster-whisper) | ✅ |
 | Fluency, vocabulary, grammar, confidence scoring | ✅ |
@@ -21,7 +22,7 @@ Record yourself speaking about a topic, get an AI transcript, and receive detail
 | Data export (CSV / JSON) | ✅ |
 | Database backup | ✅ |
 | Keyboard shortcuts | ✅ |
-| Fully offline (no account, no cloud required) | ✅ |
+| Fully offline (no online account or cloud required) | ✅ |
 
 ---
 
@@ -56,8 +57,12 @@ python app.py
 On first launch, SpeakUp will:
 1. Create a local SQLite database (`speakup.db`)
 2. Seed 140 practice topics
-3. Create a default user profile
+3. Let you sign up with a display name, email, and password, or sign in
 4. Show a short welcome guide
+
+### Local Accounts
+
+Accounts are stored on this device and work offline; they do not sync across devices. Each account has its own practice history, topic progress, achievements, and preferences. Use **Sign out / switch account** in the sidebar to change accounts. Passwords are stored as salted PBKDF2 hashes. When upgrading from an older version, sign up with the same display name to attach the account to that profile and keep its history.
 
 ---
 
@@ -152,9 +157,10 @@ Requires PyInstaller: `pip install pyinstaller`
 ## Data & Privacy
 
 - **Everything runs locally.** No data is sent to any server unless you configure `OPENAI_API_KEY` for optional AI feedback.
+- Local accounts separate practice data but do not provide cloud sync or password recovery. Anyone with access to the database file can potentially access local data.
 - The database is at `speakup.db` in the project root.
 - Recordings are saved to `recordings/YYYY/MM/session_<id>.mp4`.
-- Use **Settings → Data & Privacy** to export, backup, or delete your data.
+- Use **Settings → Data & Privacy** to export, back up the shared local database, delete the selected profile's recordings, or clear that profile's practice data.
 
 ---
 

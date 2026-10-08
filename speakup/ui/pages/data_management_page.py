@@ -6,7 +6,7 @@ Features
     Export Sessions   — CSV or JSON of all completed sessions
     Backup Database   — copy speakup.db to a user-chosen location
     Delete Recordings — remove audio/video files while keeping session records
-    Delete All Data   — wipe the database and recordings (with confirmation)
+    Clear Profile Data — clear the selected profile's data (with confirmation)
 
 All destructive actions require a confirmation dialog before proceeding.
 """
@@ -20,7 +20,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -34,6 +34,8 @@ from PySide6.QtWidgets import (
 )
 
 from speakup.config.settings import settings
+from speakup.database.connection import get_session
+from speakup.database.repository import PracticeSessionRepository, UserRepository
 from speakup.services.progress_service import ProgressService
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,8 @@ logger = logging.getLogger(__name__)
 
 class DataManagementPage(QWidget):
     """Data management and privacy controls page."""
+
+    profile_data_deleted = Signal()
 
     def __init__(self, user_id: int = 1, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -89,7 +93,7 @@ class DataManagementPage(QWidget):
 
         layout.addWidget(self._build_section(
             "💾  Backup Database",
-            "Copy the local database file to a safe location.",
+            "Copy the shared local database, including all profiles, to a safe location.",
             [("Create Backup", self._backup_db)],
         ))
 
@@ -102,9 +106,9 @@ class DataManagementPage(QWidget):
         ))
 
         layout.addWidget(self._build_section(
-            "☠️  Delete All Data",
-            "Permanently delete your database, recordings, and all session history. "
-            "This cannot be undone.",
+            "☠️  Clear This Profile's Data",
+            "Permanently clear this profile's practice history, preferences, and "
+            "recordings. Other profiles are not affected.",
             [("Delete Everything", self._delete_all)],
             danger=True,
         ))
@@ -216,8 +220,7 @@ class DataManagementPage(QWidget):
             QMessageBox.warning(self, "Backup Failed", str(exc))
 
     def _delete_recordings(self) -> None:
-        rec_dir = settings.RECORDINGS_DIR
-        files   = list(rec_dir.rglob("*.mp4")) + list(rec_dir.rglob("*.wav"))
+        files = self._profile_recording_files()
         if not files:
             QMessageBox.information(self, "Nothing to Delete", "No recording files found.")
             return
@@ -225,6 +228,7 @@ class DataManagementPage(QWidget):
         reply = QMessageBox.question(
             self, "Delete Recordings",
             f"This will delete {len(files)} recording file(s).\n\n"
+            "Only recordings for this profile will be removed.\n"
             "Your session records and scores will be kept.\n\n"
             "This cannot be undone. Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -245,18 +249,19 @@ class DataManagementPage(QWidget):
             self, "Deleted",
             f"Deleted {deleted} of {len(files)} recording file(s)."
         )
-        logger.info("Deleted %d recording files.", deleted)
+        logger.info(
+            "Deleted %d recording files for user_id=%s.", deleted, self._user_id
+        )
 
     def _delete_all(self) -> None:
         # Step 1: first confirmation
         reply1 = QMessageBox.question(
             self, "Delete All Data — Are You Sure?",
-            "This will permanently delete:\n\n"
-            "  • All session records and scores\n"
-            "  • Your transcript history\n"
-            "  • All recording files\n"
-            "  • Your preferences and achievements\n\n"
-            "The application will restart with a fresh database.\n\n"
+            "This will permanently delete this profile's:\n\n"
+            "  • Session records, scores, and transcripts\n"
+            "  • Recording files\n"
+            "  • Practice preferences and achievements\n\n"
+            "Other profiles and their data will be kept.\n\n"
             "This CANNOT be undone.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -267,8 +272,8 @@ class DataManagementPage(QWidget):
         # Step 2: second confirmation
         reply2 = QMessageBox.warning(
             self, "Final Confirmation",
-            "Type-confirm: all data will be permanently erased.\n\n"
-            "Are you absolutely sure?",
+            f"This clears {self._user_name()}'s practice history and preferences.\n\n"
+            "Other local accounts will not be changed. Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -276,26 +281,49 @@ class DataManagementPage(QWidget):
             return
 
         try:
-            # Delete recordings
-            rec_dir = settings.RECORDINGS_DIR
-            if rec_dir.exists():
-                shutil.rmtree(rec_dir, ignore_errors=True)
-                rec_dir.mkdir(parents=True, exist_ok=True)
+            for recording in self._profile_recording_files():
+                try:
+                    recording.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.warning("Could not delete %s: %s", recording, exc)
 
-            # Delete database
-            db_path = settings.PROJECT_ROOT / "speakup.db"
-            if db_path.exists():
-                db_path.unlink()
+            with get_session() as session:
+                cleared = UserRepository(session).clear_profile_data(self._user_id)
+            if not cleared:
+                raise ValueError("The active profile could not be found.")
 
-            logger.warning("All user data deleted by user request.")
+            logger.warning("Profile data deleted for user_id=%s.", self._user_id)
             QMessageBox.information(
                 self, "Data Deleted",
-                "All data has been deleted.\n\n"
-                "Please restart the application to begin fresh."
+                "This profile's practice data has been deleted.\n\n"
+                "The profile remains available, and other profiles are unchanged."
             )
+            self.profile_data_deleted.emit()
         except Exception as exc:
             logger.error("Delete all failed: %s", exc)
             QMessageBox.warning(self, "Error", f"Delete failed: {exc}")
+
+    def _profile_recording_files(self) -> list[Path]:
+        with get_session() as session:
+            sessions = PracticeSessionRepository(session).get_by_user(self._user_id)
+
+        recording_root = settings.RECORDINGS_DIR.resolve()
+        files: set[Path] = set()
+        for practice_session in sessions:
+            if not practice_session.recording_path:
+                continue
+            recording = Path(practice_session.recording_path).resolve()
+            if not recording.is_relative_to(recording_root):
+                continue
+            for candidate in (recording, recording.with_suffix(".wav")):
+                if candidate.is_relative_to(recording_root) and candidate.exists():
+                    files.add(candidate)
+        return sorted(files)
+
+    def _user_name(self) -> str:
+        with get_session() as session:
+            user = UserRepository(session).get_by_id(self._user_id)
+            return user.name if user else "This profile"
 
     def _fetch_rows(self) -> list[dict]:
         """Fetch session history as a list of plain dicts for export."""

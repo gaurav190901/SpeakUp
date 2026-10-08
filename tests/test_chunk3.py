@@ -622,6 +622,27 @@ class TestRecordingPageSignals:
 
 class TestPracticePageSignal:
 
+    def test_topic_shuffle_reveals_assigned_word(self):
+        from speakup.ui.pages.practice_page import _TopicCard
+
+        card = _TopicCard()
+        topic = {
+            "word": "Climate Change",
+            "category": "Environment",
+            "difficulty_display": "Intermediate",
+        }
+
+        card.show_topic(topic, animate=True)
+        assert card._word_label.text() != topic["word"]
+        assert card._shuffle_timer.isActive()
+
+        for _ in range(card._shuffle_steps):
+            card._advance_topic_shuffle()
+
+        assert card._word_label.text() == topic["word"]
+        assert not card._shuffle_timer.isActive()
+        card.close()
+
     def test_navigate_to_recording_signal_exists(self):
         from speakup.ui.pages.practice_page import PracticePage
         pp = PracticePage()

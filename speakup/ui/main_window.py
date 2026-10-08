@@ -24,10 +24,11 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import QFont, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -49,6 +50,7 @@ from speakup.ui.pages.session_results_page import SessionResultsPage
 from speakup.ui.pages.settings_page import SettingsPage
 from speakup.ui.pages.transcription_result_page import TranscriptionResultPage
 from speakup.services.word_service import WordService
+from speakup.ui.widgets.auth_dialog import AuthDialog
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +77,14 @@ _NAV_ITEMS = [
 class MainWindow(QMainWindow):
     """Top-level application window."""
 
-    def __init__(self, user_name: str = "Local User") -> None:
+    profile_switch_requested = Signal(int, str)
+    logout_requested = Signal()
+
+    def __init__(
+        self, user_id: int = 1, user_name: str = "Local User"
+    ) -> None:
         super().__init__()
+        self._user_id = user_id
         self._user_name = user_name
         self._setup_window()
         self._build_ui()
@@ -139,14 +147,17 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         self._stack.setObjectName("ContentStack")
 
-        self._dashboard_page      = DashboardPage()
-        self._practice_page       = PracticePage()
-        self._history_page        = HistoryPage()
-        self._settings_page       = SettingsPage(user_name=self._user_name)
+        self._dashboard_page      = DashboardPage(user_id=self._user_id)
+        self._practice_page       = PracticePage(user_id=self._user_id)
+        self._history_page        = HistoryPage(user_id=self._user_id)
+        self._settings_page       = SettingsPage(
+            user_id=self._user_id, user_name=self._user_name
+        )
         self._recording_page      = RecordingPage()
         self._transcription_page  = TranscriptionResultPage()
         self._results_page        = SessionResultsPage()
-        self._data_page           = DataManagementPage()
+        self._data_page           = DataManagementPage(user_id=self._user_id)
+        self._data_page.profile_data_deleted.connect(self._on_profile_data_deleted)
 
         self._stack.addWidget(self._dashboard_page)      # index 0
         self._stack.addWidget(self._practice_page)       # index 1
@@ -258,7 +269,7 @@ class MainWindow(QMainWindow):
         # ---- User info footer ----
         footer = QWidget()
         footer.setObjectName("SidebarFooter")
-        footer.setFixedHeight(64)
+        footer.setFixedHeight(116)
         footer_layout = QVBoxLayout(footer)
         footer_layout.setContentsMargins(24, 0, 24, 0)
         footer_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -267,6 +278,22 @@ class MainWindow(QMainWindow):
         user_label.setObjectName("UserNameLabel")
         footer_layout.addWidget(user_label)
 
+        switch_profile_button = QPushButton("Switch account")
+        switch_profile_button.setObjectName("SwitchProfileButton")
+        switch_profile_button.setFixedHeight(26)
+        switch_profile_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        switch_profile_button.setToolTip("Sign in to another account or create one")
+        switch_profile_button.clicked.connect(self._on_switch_profile)
+        self._switch_profile_button = switch_profile_button
+        footer_layout.addWidget(switch_profile_button)
+
+        sign_out_button = QPushButton("Sign out")
+        sign_out_button.setObjectName("SignOutButton")
+        sign_out_button.setFixedHeight(26)
+        sign_out_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        sign_out_button.clicked.connect(self.logout_requested.emit)
+        footer_layout.addWidget(sign_out_button)
+
         version_label = QLabel(f"v{settings.APP_VERSION}")
         version_label.setObjectName("VersionLabel")
         footer_layout.addWidget(version_label)
@@ -274,6 +301,19 @@ class MainWindow(QMainWindow):
         layout.addWidget(footer)
 
         return sidebar
+
+    def _on_switch_profile(self) -> None:
+        dialog = AuthDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        account = dialog.authenticated_account
+        if account and account[0] != self._user_id:
+            self.profile_switch_requested.emit(*account)
+
+    def _on_profile_data_deleted(self) -> None:
+        self._practice_page.reset_after_profile_data_deleted()
+        self._dashboard_page._load_all()
+        self._history_page._load_history()
 
     # ------------------------------------------------------------------ #
     # Navigation                                                            #
@@ -335,6 +375,7 @@ class MainWindow(QMainWindow):
             session_id, topic.get("word"),
         )
         self._recording_page.prepare(topic, session_id)
+        self._switch_profile_button.setEnabled(False)
         self._navigate_to(PAGE_RECORDING)
 
     def _on_session_completed(
@@ -367,6 +408,7 @@ class MainWindow(QMainWindow):
 
         # Release camera/mic resources
         self._recording_page.cleanup()
+        self._switch_profile_button.setEnabled(True)
 
         # Clear the completed session so Practice is ready when revisited.
         self._practice_page.on_recording_completed()
@@ -393,6 +435,7 @@ class MainWindow(QMainWindow):
             logger.error("Failed to abandon session: %s", exc)
 
         self._recording_page.cleanup()
+        self._switch_profile_button.setEnabled(True)
         self._navigate_to(PAGE_PRACTICE)
         self._practice_page.on_recording_abandoned()
 
@@ -721,6 +764,34 @@ QMainWindow, #RootWidget {{
     font-size: 13px;
     font-weight: 600;
     color: {c.COLOR_TEXT_SECONDARY};
+}}
+
+#SwitchProfileButton {{
+    background-color: transparent;
+    color: {c.COLOR_ACCENT};
+    border: none;
+    padding: 0px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+}}
+
+#SwitchProfileButton:hover {{
+    color: {c.COLOR_ACCENT_HOVER};
+}}
+
+#SignOutButton {{
+    background-color: transparent;
+    color: {c.COLOR_DANGER};
+    border: none;
+    padding: 0px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+}}
+
+#SignOutButton:hover {{
+    background-color: rgba(244, 67, 54, 0.10);
 }}
 
 #VersionLabel {{

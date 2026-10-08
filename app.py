@@ -3,10 +3,10 @@ app.py — SpeakUp application entry point.
 
 Startup sequence:
     1. Initialise logging
-    2. Ensure runtime directories exist
-    3. Initialise the database (create tables + seed default user)
-    4. Seed default words if the word pool is empty
-    5. Launch the PySide6 application and main window
+    2. Launch the PySide6 application and show the startup screen
+    3. Ensure runtime directories exist
+    4. Initialise the database and seed default words if needed
+    5. Build and show the main window
 """
 
 from __future__ import annotations
@@ -38,34 +38,33 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Remaining imports (after logging is ready)
 # ---------------------------------------------------------------------------
-from PySide6.QtWidgets import QApplication      # noqa: E402
-from PySide6.QtCore import Qt                   # noqa: E402
-from PySide6.QtGui import QFont                 # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QSplashScreen  # noqa: E402
+from PySide6.QtCore import QRect, Qt                       # noqa: E402
+from PySide6.QtGui import QColor, QFont, QPainter, QPixmap  # noqa: E402
 
-from speakup.database.connection import init_db, get_session  # noqa: E402
-from speakup.database.repository import UserRepository         # noqa: E402
+from speakup.database.connection import init_db                # noqa: E402
 from speakup.services.word_service import WordService          # noqa: E402
 from speakup.ui.main_window import MainWindow                  # noqa: E402
 from speakup.ui.widgets.onboarding import maybe_show_onboarding  # noqa: E402
+from speakup.ui.widgets.auth_dialog import AuthDialog          # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Initialisation helpers
 # ---------------------------------------------------------------------------
 
-def _bootstrap_database() -> str:
-    """
-    Initialise the database and return the default user's name.
+def _bootstrap_database() -> None:
+    """Initialise the database and seed default words if needed.
 
     1. Create all tables (idempotent — safe to call on every launch).
-    2. Seed the default user if none exists.
-    3. Return the current user's display name.
+    2. Preserve existing local profiles.
+    3. Seed default words if the word pool is empty.
     """
     logger.info("Bootstrapping database…")
     settings.ensure_directories()
 
     try:
-        init_db()
+        init_db(seed_default_user=False)
         logger.info("Database initialised successfully.")
     except Exception as exc:
         logger.critical("Database initialisation failed: %s", exc, exc_info=True)
@@ -79,16 +78,6 @@ def _bootstrap_database() -> str:
             logger.info("Word pool seeded with %d words.", seeded)
     except Exception as exc:
         logger.warning("Word seeding failed (non-fatal): %s", exc)
-
-    # Fetch the default user name for the window title / footer
-    try:
-        with get_session() as session:
-            user = UserRepository(session).get_first()
-            return user.name if user else settings.DEFAULT_USER_NAME
-    except Exception as exc:
-        logger.warning("Could not retrieve default user (non-fatal): %s", exc)
-        return settings.DEFAULT_USER_NAME
-
 
 def _install_exception_handler(app: QApplication) -> None:
     """
@@ -142,6 +131,32 @@ def _create_application() -> QApplication:
     return app
 
 
+def _create_splash_screen() -> QSplashScreen:
+    """Show a branded startup screen while local data and pages load."""
+    pixmap = QPixmap(440, 220)
+    pixmap.fill(QColor(settings.COLOR_BG_DARK))
+
+    painter = QPainter(pixmap)
+    painter.setPen(QColor(settings.COLOR_TEXT_PRIMARY))
+    painter.setFont(QFont("Segoe UI", 26, QFont.Weight.Bold))
+    painter.drawText(QRect(24, 56, 392, 48), Qt.AlignmentFlag.AlignCenter, settings.APP_NAME)
+    painter.fillRect(QRect(194, 116, 52, 3), QColor(settings.COLOR_ACCENT))
+    painter.setPen(QColor(settings.COLOR_TEXT_SECONDARY))
+    painter.setFont(QFont("Segoe UI", 10))
+    painter.drawText(QRect(24, 130, 392, 28), Qt.AlignmentFlag.AlignCenter, "Speaking Practice")
+    painter.end()
+
+    splash = QSplashScreen(pixmap, Qt.WindowType.WindowStaysOnTopHint)
+    splash.showMessage(
+        "Preparing your workspace...",
+        Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom,
+        QColor(settings.COLOR_TEXT_SECONDARY),
+    )
+    splash.show()
+    QApplication.processEvents()
+    return splash
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -162,18 +177,71 @@ def main() -> int:
         platform.release(),
     )
 
+    app = _create_application()
+    _install_exception_handler(app)
+    splash = _create_splash_screen()
+
     try:
-        user_name = _bootstrap_database()
+        _bootstrap_database()
     except Exception as exc:
+        splash.close()
         logger.critical("Database initialisation failed: %s", exc, exc_info=True)
         print(f"[FATAL] Database initialisation failed: {exc}", file=sys.stderr)
         return 1
 
-    app = _create_application()
-    _install_exception_handler(app)
+    splash.showMessage(
+        "Sign in or create an account...",
+        Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom,
+        QColor(settings.COLOR_TEXT_SECONDARY),
+    )
+    app.processEvents()
+    auth_dialog = AuthDialog(splash)
+    if auth_dialog.exec() != QDialog.DialogCode.Accepted:
+        splash.close()
+        return 0
 
-    window = MainWindow(user_name=user_name)
+    account = auth_dialog.authenticated_account
+    if account is None:
+        splash.close()
+        return 0
+
+    user_id, user_name = account
+    window = MainWindow(user_id=user_id, user_name=user_name)
     window.show()
+    splash.finish(window)
+
+    active_window = [window]
+
+    def _switch_profile(next_user_id: int, next_user_name: str) -> None:
+        previous_window = active_window[0]
+        next_window = MainWindow(
+            user_id=next_user_id,
+            user_name=next_user_name,
+        )
+        next_window.profile_switch_requested.connect(_switch_profile)
+        next_window.logout_requested.connect(_sign_out)
+        active_window[0] = next_window
+        next_window.show()
+        previous_window.close()
+
+    def _sign_out() -> None:
+        previous_window = active_window[0]
+        previous_window.hide()
+        sign_in_dialog = AuthDialog()
+        if sign_in_dialog.exec() != QDialog.DialogCode.Accepted:
+            previous_window.close()
+            app.quit()
+            return
+
+        next_account = sign_in_dialog.authenticated_account
+        if next_account is None:
+            previous_window.close()
+            app.quit()
+            return
+        _switch_profile(*next_account)
+
+    window.profile_switch_requested.connect(_switch_profile)
+    window.logout_requested.connect(_sign_out)
 
     maybe_show_onboarding(parent=window)
 

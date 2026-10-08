@@ -46,6 +46,7 @@ State machine
 from __future__ import annotations
 
 import logging
+import random
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -145,6 +146,11 @@ class _TopicCard(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("TopicCard")
+        self._shuffle_timer = QTimer(self)
+        self._shuffle_timer.setInterval(45)
+        self._shuffle_timer.timeout.connect(self._advance_topic_shuffle)
+        self._shuffle_target = ""
+        self._shuffle_steps = 0
         self._build()
         self._apply_style()
 
@@ -235,6 +241,7 @@ class _TopicCard(QFrame):
     # ── public update API ──────────────────────────────────────────────────
 
     def show_loading(self) -> None:
+        self._cancel_topic_shuffle()
         self._word_label.setText("Loading…")
         self._cat_value.setText("—")
         self._diff_value.setText("—")
@@ -243,8 +250,13 @@ class _TopicCard(QFrame):
         self._start_btn.setEnabled(False)
         self._start_btn.setCursor(Qt.CursorShape.ForbiddenCursor)
 
-    def show_topic(self, topic: dict) -> None:
-        self._word_label.setText(topic.get("word", "—"))
+    def show_topic(self, topic: dict, animate: bool = False) -> None:
+        word = topic.get("word", "—")
+        if animate:
+            self._start_topic_shuffle(word)
+        else:
+            self._cancel_topic_shuffle()
+            self._word_label.setText(word)
         self._cat_value.setText(topic.get("category") or "—")
         self._diff_value.setText(topic.get("difficulty_display") or "—")
 
@@ -257,7 +269,44 @@ class _TopicCard(QFrame):
         self._start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._start_btn.setToolTip("")
 
+    def _start_topic_shuffle(self, word: str) -> None:
+        self._cancel_topic_shuffle()
+        self._shuffle_target = word
+        self._shuffle_steps = 7
+        self._word_label.setText(self._scramble_word(word))
+        self._shuffle_timer.start()
+
+    def _advance_topic_shuffle(self) -> None:
+        self._shuffle_steps -= 1
+        if self._shuffle_steps <= 0:
+            self._word_label.setText(self._shuffle_target)
+            self._shuffle_timer.stop()
+            return
+        self._word_label.setText(self._scramble_word(self._shuffle_target))
+
+    @staticmethod
+    def _scramble_word(word: str) -> str:
+        positions = [index for index, char in enumerate(word) if not char.isspace()]
+        if len(positions) < 2:
+            return word
+
+        original = [word[index] for index in positions]
+        shuffled = original.copy()
+        random.shuffle(shuffled)
+        if shuffled == original:
+            shuffled = shuffled[1:] + shuffled[:1]
+
+        characters = list(word)
+        for index, char in zip(positions, shuffled):
+            characters[index] = char
+        return "".join(characters)
+
+    def _cancel_topic_shuffle(self) -> None:
+        self._shuffle_timer.stop()
+        self._shuffle_steps = 0
+
     def show_exhausted(self, message: str | None = None) -> None:
+        self._cancel_topic_shuffle()
         self._word_label.setText("🏆")
         self._cat_value.setText("—")
         self._diff_value.setText("—")
@@ -513,7 +562,7 @@ class PracticePage(QWidget):
         """Called once on first show via QTimer."""
         self._load_topic()
 
-    def _load_topic(self) -> None:
+    def _load_topic(self, animate: bool = False) -> None:
         """Assign a new topic using the current filter selections."""
         category   = self._filter_bar.selected_category
         difficulty = self._filter_bar.selected_difficulty
@@ -539,7 +588,7 @@ class PracticePage(QWidget):
                 self._page_state = _STATE_TOPIC_LOADED
                 self._current_session_id = result["session_id"]
                 self._current_topic = result
-                self._topic_card.show_topic(result)
+                self._topic_card.show_topic(result, animate=animate)
                 self._update_remaining_chip(category, difficulty)
                 logger.debug(
                     "Topic assigned: %r  session_id=%s",
@@ -584,7 +633,7 @@ class PracticePage(QWidget):
                 logger.warning("Could not abandon session: %s", exc)
             self._current_session_id = None
 
-        self._load_topic()
+        self._load_topic(animate=True)
 
     def _on_start_practice(self) -> None:
         """
@@ -694,6 +743,14 @@ class PracticePage(QWidget):
                 self._filter_bar.selected_category,
                 self._filter_bar.selected_difficulty,
             )
+
+    def reset_after_profile_data_deleted(self) -> None:
+        """Drop stale session state after this profile's history is cleared."""
+        self._current_session_id = None
+        self._current_topic = None
+        self._page_state = _STATE_IDLE
+        self._topic_card.show_loading()
+        QTimer.singleShot(0, self._load_topic)
 
     # ------------------------------------------------------------------ #
     # Styles                                                                #

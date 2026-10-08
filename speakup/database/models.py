@@ -100,9 +100,35 @@ class User(Base):
         "UserPreferences", back_populates="user", uselist=False,
         cascade="all, delete-orphan"
     )
+    credential: Mapped["UserCredential | None"] = relationship(
+        "UserCredential", back_populates="user", uselist=False,
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<User id={self.id} name={self.name!r}>"
+
+
+class UserCredential(Base):
+    """Local sign-in credentials for one user profile."""
+
+    __tablename__ = "user_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, unique=True,
+    )
+    email: Mapped[str] = mapped_column(String(254), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="credential")
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<UserCredential user_id={self.user_id} email={self.email!r}>"
 
 
 # ---------------------------------------------------------------------------

@@ -63,6 +63,7 @@ class TestDatabaseInitialisation:
         assert "practice_sessions" in tables
         assert "word_usage" in tables
         assert "analysis_results" in tables
+        assert "user_credentials" in tables
 
     def test_default_user_seeded(self, db_session):
         """A default 'Local User' is created automatically on first init."""
@@ -77,6 +78,11 @@ class TestDatabaseInitialisation:
         """Calling init_db() again on an existing DB does not raise or duplicate data."""
         init_db("sqlite:///:memory:")  # already initialised via fixture
         # Just verify no exception is raised
+
+    def test_init_db_can_skip_default_user_for_signup(self, engine):
+        init_db("sqlite:///:memory:", seed_default_user=False)
+        with get_session() as session:
+            assert UserRepository(session).count() == 0
 
 
 # ===========================================================================
@@ -147,6 +153,80 @@ class TestUserRepository:
     def test_delete_missing_user(self, db_session):
         repo = UserRepository(db_session)
         assert repo.delete(9999) is False
+
+
+class TestAuthenticationService:
+
+    def test_register_and_login_uses_password_hash(self, db_session):
+        from speakup.services.auth_service import AuthenticationService
+        from speakup.database.repository import UserCredentialRepository
+
+        auth = AuthenticationService()
+        account = auth.register("Auth User", "Auth@Example.com", "GoodPassword123")
+
+        credential = UserCredentialRepository(db_session).get_by_email(
+            "auth@example.com"
+        )
+        assert credential is not None
+        assert credential.password_hash != "GoodPassword123"
+        assert credential.password_hash.startswith("pbkdf2_sha256$")
+        assert auth.login("AUTH@example.com", "GoodPassword123") == account
+        assert auth.login("auth@example.com", "IncorrectPassword") is None
+
+    def test_register_claims_existing_profile_and_keeps_history(self, db_session):
+        from speakup.services.auth_service import AuthenticationService
+
+        user = _make_user(db_session, "Existing Local User")
+        word = _make_word(db_session, "Existing User Topic")
+        _make_session(db_session, user.id, word.id)
+
+        account = AuthenticationService().register(
+            "Existing Local User", "legacy@example.com", "GoodPassword123"
+        )
+
+        assert account == (user.id, user.name)
+        assert PracticeSessionRepository(db_session).count_by_user(user.id) == 1
+
+    def test_register_rejects_duplicate_email(self, db_session):
+        from speakup.services.auth_service import AuthenticationService
+
+        auth = AuthenticationService()
+        auth.register("First User", "shared@example.com", "GoodPassword123")
+        with pytest.raises(ValueError, match="already exists"):
+            auth.register("Second User", "SHARED@example.com", "OtherPassword123")
+
+    def test_register_rejects_short_password(self):
+        from speakup.services.auth_service import AuthenticationService
+
+        with pytest.raises(ValueError, match="10 and 128"):
+            AuthenticationService().register(
+                "Short Password", "short@example.com", "too-short"
+            )
+
+    def test_clear_profile_data_preserves_other_profiles(self, db_session):
+        from speakup.database.repository import UserPreferencesRepository
+
+        repo = UserRepository(db_session)
+        first = repo.create("First profile")
+        second = repo.create("Second profile")
+        first_word = _make_word(db_session, "First profile topic")
+        second_word = _make_word(db_session, "Second profile topic")
+        _make_session(db_session, first.id, first_word.id)
+        _make_session(db_session, second.id, second_word.id)
+        WordUsageRepository(db_session).mark_used(first.id, first_word.id)
+        WordUsageRepository(db_session).mark_used(second.id, second_word.id)
+        UserPreferencesRepository(db_session).get_or_create(first.id)
+        UserPreferencesRepository(db_session).get_or_create(second.id)
+        db_session.commit()
+
+        assert repo.clear_profile_data(first.id) is True
+        db_session.commit()
+
+        assert repo.get_by_id(first.id) is not None
+        assert PracticeSessionRepository(db_session).get_by_user(first.id) == []
+        assert WordUsageRepository(db_session).count_used_for_user(first.id) == 0
+        assert PracticeSessionRepository(db_session).get_by_user(second.id)
+        assert WordUsageRepository(db_session).count_used_for_user(second.id) == 1
 
 
 # ===========================================================================

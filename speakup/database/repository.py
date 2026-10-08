@@ -28,6 +28,7 @@ from speakup.database.models import (
     PracticeSession,
     SessionStatus,
     User,
+    UserCredential,
     UserPreferences,
     Word,
     WordUsage,
@@ -64,6 +65,13 @@ class UserRepository:
     def get_all(self) -> list[User]:
         return list(self._session.scalars(select(User).order_by(User.created_at)))
 
+    def get_unclaimed_by_name(self, name: str) -> Optional[User]:
+        """Find a legacy profile with no login credentials by display name."""
+        for user in self.get_all():
+            if user.name.casefold() == name.casefold() and user.credential is None:
+                return user
+        return None
+
     def get_first(self) -> Optional[User]:
         """Return the first (and usually only) local user."""
         return self._session.scalars(select(User).order_by(User.id)).first()
@@ -81,6 +89,22 @@ class UserRepository:
             self._session.flush()
         return user
 
+    def clear_profile_data(self, user_id: int) -> bool:
+        """Delete one profile's sessions, topic usage, and preferences."""
+        user = self.get_by_id(user_id)
+        if user is None:
+            return False
+
+        for practice_session in list(user.practice_sessions):
+            self._session.delete(practice_session)
+        for word_usage in list(user.word_usages):
+            self._session.delete(word_usage)
+        if user.preferences is not None:
+            self._session.delete(user.preferences)
+
+        self._session.flush()
+        return True
+
     # ---- delete -----------------------------------------------------------
 
     def delete(self, user_id: int) -> bool:
@@ -90,6 +114,28 @@ class UserRepository:
             self._session.flush()
             return True
         return False
+
+
+class UserCredentialRepository:
+    """Persistence methods for local login credentials."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get_by_email(self, email: str) -> Optional[UserCredential]:
+        return self._session.scalars(
+            select(UserCredential).where(UserCredential.email == email)
+        ).first()
+
+    def create(self, user_id: int, email: str, password_hash: str) -> UserCredential:
+        credential = UserCredential(
+            user_id=user_id,
+            email=email,
+            password_hash=password_hash,
+        )
+        self._session.add(credential)
+        self._session.flush()
+        return credential
 
 
 # ---------------------------------------------------------------------------

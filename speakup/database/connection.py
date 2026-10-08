@@ -128,17 +128,22 @@ def get_session() -> Generator[Session, None, None]:
 # Initialisation
 # ---------------------------------------------------------------------------
 
-def init_db(database_url: str | None = None) -> Engine:
+def init_db(
+    database_url: str | None = None,
+    *,
+    seed_default_user: bool = True,
+) -> Engine:
     """
     Initialise the database:
 
     1. Create the engine (using *database_url* override when supplied).
     2. Run ``CREATE TABLE IF NOT EXISTS`` for every model.
-    3. Seed a default user if the users table is empty.
+    3. Optionally seed a default user if the users table is empty.
 
     Args:
         database_url: Optional URL override (used by tests to point at an
                       in-memory or temp-file database).
+        seed_default_user: Create a legacy default profile when none exist.
 
     Returns:
         The :class:`~sqlalchemy.engine.Engine` that was used.
@@ -164,7 +169,8 @@ def init_db(database_url: str | None = None) -> Engine:
         logger.error("Failed to create database tables: %s", exc)
         raise
 
-    _seed_default_user()
+    if seed_default_user:
+        _seed_default_user()
     return engine
 
 

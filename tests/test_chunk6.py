@@ -563,6 +563,50 @@ class TestMainWindowResults:
         assert callable(win._on_go_to_dashboard)
 
 
+class TestLocalProfiles:
+
+    def test_signup_authenticates_new_local_account(self, engine):
+        from speakup.ui.widgets.auth_dialog import AuthDialog
+
+        dialog = AuthDialog()
+        dialog._signup_name.setText("Practice User")
+        dialog._signup_email.setText("practice@example.com")
+        dialog._signup_password.setText("GoodPassword123")
+        dialog._signup_confirmation.setText("GoodPassword123")
+        dialog._sign_up()
+
+        assert dialog.authenticated_account is not None
+        assert dialog.authenticated_account[1] == "Practice User"
+
+    def test_selected_profile_id_is_used_by_profile_scoped_pages(self, engine):
+        from speakup.database.connection import get_session
+        from speakup.database.repository import UserRepository
+        from speakup.ui.main_window import MainWindow
+
+        with get_session() as session:
+            profile = UserRepository(session).create("Scoped User")
+            user_id = profile.id
+
+        window = MainWindow(user_id=user_id, user_name="Scoped User")
+
+        assert window._dashboard_page._user_id == user_id
+        assert window._practice_page._user_id == user_id
+        assert window._history_page._user_id == user_id
+        assert window._settings_page._user_id == user_id
+        assert window._data_page._user_id == user_id
+
+    def test_sign_out_button_emits_logout_request(self):
+        from PySide6.QtWidgets import QPushButton
+        from speakup.ui.main_window import MainWindow
+
+        window = MainWindow(user_name="Signed In User")
+        logout_requests = []
+        window.logout_requested.connect(lambda: logout_requests.append(True))
+        window.findChild(QPushButton, "SignOutButton").click()
+
+        assert logout_requests == [True]
+
+
 # ===========================================================================
 # 12. MainWindow._enrich_analysis_result — feedback text parsing
 # ===========================================================================
