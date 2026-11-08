@@ -35,6 +35,7 @@ from speakup.data.words.loader import (
     DIFFICULTY_DISPLAY,
     DISPLAY_TO_DIFFICULTY,
     DIFFICULTY_LABELS,
+    get_topic_hints,
     load_topics,
 )
 from speakup.database.connection import get_session
@@ -81,6 +82,41 @@ class WordService:
             created = repo.bulk_create(topics)
             logger.info("Seeded %d words into database.", len(created))
             return len(created)
+
+    def sync_bundled_topics(self) -> int:
+        """
+        Bring existing database topics in line with the bundled topics.json.
+
+        The words table is only seeded once, so later improvements to the
+        bundled wording or category names would otherwise never reach an
+        existing database. Topics are matched by their title (``word``); the
+        category, difficulty and description are refreshed, and any new
+        bundled topics are added. Practice history is untouched because word
+        ids do not change.
+
+        Returns the number of topics updated or added.
+        """
+        changed = 0
+        with get_session() as session:
+            repo = WordRepository(session)
+            for topic in load_topics():
+                existing = repo.get_by_word(topic["word"])
+                if existing is None:
+                    repo.bulk_create([topic])
+                    changed += 1
+                    continue
+                updates = {
+                    "category": topic.get("category"),
+                    "difficulty": topic["difficulty"],
+                    "description": topic.get("description"),
+                }
+                if any(getattr(existing, k) != v for k, v in updates.items()):
+                    for key, value in updates.items():
+                        setattr(existing, key, value)
+                    changed += 1
+        if changed:
+            logger.info("Synced %d topics from bundled topics.json.", changed)
+        return changed
 
     def load_words_from_file(self, file_path: str | Path) -> int:
         """
@@ -183,6 +219,7 @@ class WordService:
                 "difficulty": word.difficulty,
                 "difficulty_display": DIFFICULTY_DISPLAY.get(word.difficulty, word.difficulty),
                 "description": word.description,
+                "hints": get_topic_hints(word.word),
                 "exhausted": False,
                 "message": "",
             }

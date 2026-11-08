@@ -83,6 +83,8 @@ def _bootstrap_database() -> None:
         seeded = word_service.seed_words_if_empty()
         if seeded:
             logger.info("Word pool seeded with %d words.", seeded)
+        else:
+            word_service.sync_bundled_topics()
     except Exception as exc:
         logger.warning("Word seeding failed (non-fatal): %s", exc)
 

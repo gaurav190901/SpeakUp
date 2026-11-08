@@ -57,6 +57,11 @@ from PySide6.QtWidgets import (
 )
 
 from speakup.config.settings import settings
+from speakup.data.words.loader import (
+    category_with_icon,
+    format_hints_html,
+    get_topic_hints,
+)
 from speakup.services.recording_service import RecordingService, RecordingState
 from speakup.ui.widgets.camera_preview import CameraPreviewWidget
 from speakup.ui.widgets.recording_timer import RecordingTimerWidget
@@ -339,9 +344,27 @@ class RecordingPage(QWidget):
         meta_row.addLayout(diff_col)
         meta_row.addStretch()
 
+        # Question + "ideas to talk about" so the user has prompts while speaking
+        self._topic_desc_label = QLabel("")
+        self._topic_desc_label.setWordWrap(True)
+        self._topic_desc_label.setVisible(False)
+        self._topic_desc_label.setStyleSheet(
+            f"font-size: 13px; color: {settings.COLOR_TEXT_SECONDARY};"
+        )
+
+        self._topic_hints_label = QLabel("")
+        self._topic_hints_label.setWordWrap(True)
+        self._topic_hints_label.setTextFormat(Qt.TextFormat.RichText)
+        self._topic_hints_label.setVisible(False)
+        self._topic_hints_label.setStyleSheet(
+            f"font-size: 13px; color: {settings.COLOR_TEXT_PRIMARY};"
+        )
+
         layout.addWidget(your_topic)
         layout.addWidget(self._topic_word_label)
         layout.addLayout(meta_row)
+        layout.addWidget(self._topic_desc_label)
+        layout.addWidget(self._topic_hints_label)
 
         return card
 
@@ -525,9 +548,17 @@ class RecordingPage(QWidget):
         word = topic.get("word", "—")
         self._header_word.setText(word)
         self._topic_word_label.setText(word)
-        self._cat_label.setText(topic.get("category") or "—")
+        self._cat_label.setText(category_with_icon(topic.get("category")))
         self._diff_label.setText(topic.get("difficulty_display") or
                                   topic.get("difficulty") or "—")
+
+        desc = topic.get("description") or ""
+        self._topic_desc_label.setText(desc)
+        self._topic_desc_label.setVisible(bool(desc))
+
+        hints = topic.get("hints") or get_topic_hints(topic.get("word"))
+        self._topic_hints_label.setText(format_hints_html(hints))
+        self._topic_hints_label.setVisible(bool(hints))
 
     def _reset_ui(self) -> None:
         self._start_btn.setEnabled(False)
