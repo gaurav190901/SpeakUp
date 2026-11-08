@@ -1,5 +1,5 @@
 """
-tests/test_database.py — pytest suite for Chunk 1 database layer.
+tests/test_database.py — database models, connection and repositories.
 
 Tests cover:
     - Database initialisation (tables created, default user seeded)

@@ -1,5 +1,5 @@
 """
-tests/test_chunk5.py — pytest suite for Chunk 5 (Speech Analysis Engine).
+tests/test_speech_analysis.py — speech analysis engine (fluency, vocabulary, grammar, confidence).
 
 All tests use fixed transcripts and deterministic logic — no external API,
 no model downloads, no hardware required.
@@ -609,7 +609,7 @@ class TestSpeechAnalysisResult:
             assert 0.0 <= val <= 100.0, f"{key} = {val} out of range"
 
     def test_to_db_dict_no_pronunciation_score(self):
-        # pronunciation_score intentionally None in Chunk 5
+        # pronunciation_score is intentionally None (not yet supported)
         r = self._make_result()
         d = r.to_db_dict()
         assert "pronunciation_score" not in d or d.get("pronunciation_score") is None

@@ -294,7 +294,7 @@ class WordUsage(Base):
 class AnalysisResult(Base):
     """
     AI-generated analysis scores and feedback for a completed session.
-    Populated in a future chunk when speech analysis is implemented.
+    Populated by the speech analysis service.
     """
 
     __tablename__ = "analysis_results"

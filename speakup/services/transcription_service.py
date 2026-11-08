@@ -249,7 +249,7 @@ class TranscriptionService:
         """
         Given an MP4 or WAV path, return the sibling WAV file path.
 
-        Recording format (from Chunk 3):
+        Recording format (from the recording service):
             recordings/YYYY/MM/session_<id>.mp4   ← video
             recordings/YYYY/MM/session_<id>.wav   ← audio (sibling)
         """

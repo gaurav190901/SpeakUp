@@ -1,5 +1,5 @@
 """
-tests/test_chunk6.py — pytest suite for Chunk 6 (Session Results Page).
+tests/test_session_results.py — session results page.
 
 All tests are offline — no real models, hardware, or DB writes required
 for the pure-UI tests.  DB-backed tests use the shared engine/db_session

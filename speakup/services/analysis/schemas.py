@@ -203,7 +203,7 @@ class SpeechAnalysisResult:
             "pause_count":       self.fluency.pause_count,
             "overall_score":     round(self.overall.total,    2),
             "feedback":          self.feedback.to_text(),
-            # pronunciation_score is deliberately None here (Chunk 6+)
+            # pronunciation_score is deliberately None (not yet supported)
         }
 
     def to_ui_dict(self) -> dict:

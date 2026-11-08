@@ -1,7 +1,7 @@
 """
 PracticePage — topic assignment and session management UI.
 
-Chunk 2 layout
+Layout
 ──────────────
 ┌─ Page header ───────────────────────────────────────────────────────┐
 │  "Today's Practice"                                                  │

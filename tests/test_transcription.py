@@ -1,5 +1,5 @@
 """
-tests/test_chunk4.py — pytest suite for Chunk 4 (Transcription System).
+tests/test_transcription.py — speech transcription providers and service.
 
 All tests use mocked transcription — no real faster-whisper model or
 audio files are required.  The suite runs offline and in CI environments.
@@ -904,7 +904,7 @@ class TestTranscriptionResultPage:
 # 16. MainWindow — constants and stack
 # ===========================================================================
 
-class TestMainWindowChunk4:
+class TestMainWindowTranscription:
 
     def test_page_transcription_constant(self):
         from speakup.ui.main_window import PAGE_TRANSCRIPTION

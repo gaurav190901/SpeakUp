@@ -7,7 +7,7 @@ Architecture
 ────────────
 BaseGrammarAnalyzer (ABC)
     └── RuleBasedGrammarAnalyzer  — pure Python, no API, always available
-    └── LLMGrammarAnalyzer        — stub, requires external API (future chunk)
+    └── LLMGrammarAnalyzer        — stub, requires external API (planned)
 
 The factory function ``get_grammar_analyzer()`` returns the right
 implementation based on ``settings.ANALYSIS_GRAMMAR_BACKEND``.
@@ -20,7 +20,7 @@ analyser detects a pragmatic set of high-frequency speaking errors using
 regex and simple heuristics — sufficient to give actionable feedback without
 any external calls.
 
-The LLM analyser is a clean hook point for Chunk 6+ integration.
+The LLM analyser is a clean hook point for a future API integration.
 """
 
 from __future__ import annotations
@@ -208,7 +208,7 @@ class LLMGrammarAnalyzer(BaseGrammarAnalyzer):
     Grammar analysis via an external LLM API.
 
     Currently a stub — returns a polite "not configured" result.
-    Will be implemented in a future chunk when API integration is added.
+    Will be implemented when API integration is added.
     """
 
     @property

@@ -1,5 +1,5 @@
 """
-tests/test_chunk10.py — pytest suite for Chunk 10 (Production Readiness).
+tests/test_production_readiness.py — production hardening: history, main window and settings.
 
 Covers:
     1.  Error handling — global exception handler installed
@@ -220,7 +220,7 @@ class TestDataManagementPage:
 # 5. HistoryPage
 # ===========================================================================
 
-class TestHistoryPageChunk10:
+class TestHistoryPageProduction:
 
     def test_view_session_signal_exists(self):
         from speakup.ui.pages.history_page import HistoryPage
@@ -248,10 +248,10 @@ class TestHistoryPageChunk10:
 
 
 # ===========================================================================
-# 6. MainWindow Chunk 10 additions
+# 6. MainWindow production features
 # ===========================================================================
 
-class TestMainWindowChunk10:
+class TestMainWindowProduction:
 
     def test_stack_count_is_eight(self):
         from speakup.ui.main_window import MainWindow
@@ -299,10 +299,10 @@ class TestMainWindowChunk10:
 
 
 # ===========================================================================
-# 7. SettingsPage Chunk 10 additions
+# 7. SettingsPage production features
 # ===========================================================================
 
-class TestSettingsPageChunk10:
+class TestSettingsPageProduction:
 
     def test_open_data_management_signal_exists(self):
         from speakup.ui.pages.settings_page import SettingsPage

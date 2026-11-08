@@ -117,7 +117,7 @@ class MediaMuxer:
 
     In practice this means: the "muxed" file is the video-only MP4 renamed,
     and the WAV is stored alongside it.  The UI reports the MP4 path.
-    Both files are kept so Chunk 4 can transcribe from the WAV directly.
+    Both files are kept so transcription can read the WAV directly.
 
     If a proper mux is later needed, swap in ffmpeg-python here.
     """

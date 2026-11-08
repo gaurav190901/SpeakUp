@@ -1,5 +1,5 @@
 """
-tests/test_chunk8.py — pytest suite for Chunk 8 (AI Feedback Engine).
+tests/test_ai_feedback.py — AI feedback engine (local and LLM providers).
 
 All tests use mocked or local providers — no real OpenAI API calls.
 Tests run offline and do not require OPENAI_API_KEY to be set.

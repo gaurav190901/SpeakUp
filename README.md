@@ -169,9 +169,9 @@ Requires PyInstaller: `pip install pyinstaller`
 
 ## Data & Privacy
 
-- **Everything runs locally.** No data is sent to any server unless you configure `OPENAI_API_KEY` for optional AI feedback.
+- **Runs locally by default.** Nothing leaves your machine unless you set `OPENAI_API_KEY`; then session audio is sent to OpenAI for transcription, and transcripts may be sent for optional AI feedback.
 - Local accounts separate practice data but do not provide cloud sync or password recovery. Anyone with access to the database file can potentially access local data.
-- The database is at `speakup.db` in the project root.
+- Data location: when running from source, `speakup.db`, `recordings/` and `speakup.log` live in the project root; the packaged app stores them in `%LOCALAPPDATA%\SpeakUp`.
 - Recordings are saved to `recordings/YYYY/MM/session_<id>.mp4`.
 - Use **Settings → Data & Privacy** to export, back up the shared local database, delete the selected profile's recordings, or clear that profile's practice data.
 
@@ -194,20 +194,22 @@ SpeakUp can work completely offline once the local transcription model is availa
 
 ---
 
-## Chunks Implemented
+## Tests
 
-| Chunk | Feature Area |
+The suite runs fully offline (no camera, microphone, network or model downloads) and runs automatically on GitHub for every push and pull request.
+
+| File | Covers |
 |---|---|
-| 1 | Foundation, DB schema, navigation shell |
-| 2 | Word/topic system, session state machine |
-| 3 | Camera + microphone recording |
-| 4 | Speech transcription (OpenAI Whisper, with faster-whisper local fallback) |
-| 5 | Speech analysis engine |
-| 6 | Session results page |
-| 7 | Progress dashboard with charts |
-| 8 | AI feedback engine (local + optional LLM) |
-| 9 | Gamification (streaks, achievements, goals) |
-| 10 | Production hardening |
+| `test_database.py` | Models, connection, repositories |
+| `test_topics_and_sessions.py` | Topics, word pool, session lifecycle |
+| `test_recording.py` | Camera and microphone recording |
+| `test_transcription.py` | Transcription providers and fallback |
+| `test_speech_analysis.py` | Fluency, vocabulary, grammar, confidence |
+| `test_session_results.py` | Session results page |
+| `test_dashboard.py` | Progress dashboard |
+| `test_ai_feedback.py` | Local and LLM feedback |
+| `test_gamification.py` | Streaks, achievements, goals |
+| `test_production_readiness.py` | History, main window, settings |
 
 ---
 

@@ -1,5 +1,5 @@
 """
-tests/test_chunk3.py — pytest suite for Chunk 3 (Recording System).
+tests/test_recording.py — camera and microphone recording system.
 
 Covers:
     1.  RecordingState constants and is_terminal()

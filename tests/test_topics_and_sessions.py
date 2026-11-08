@@ -1,5 +1,5 @@
 """
-tests/test_chunk2.py — pytest suite for Chunk 2.
+tests/test_topics_and_sessions.py — topic loading, word pool and practice session lifecycle.
 
 Covers:
     1.  Loader — topics.json loading and validation

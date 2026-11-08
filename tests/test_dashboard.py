@@ -1,5 +1,5 @@
 """
-tests/test_chunk7.py — pytest suite for Chunk 7 (Progress Dashboard).
+tests/test_dashboard.py — progress dashboard.
 
 All DB tests use the shared engine/db_session fixtures from conftest.py.
 No real model downloads, no hardware, no external APIs required.

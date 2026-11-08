@@ -1,5 +1,5 @@
 """
-SettingsPage — application preferences (Chunk 9: fully wired).
+SettingsPage — application preferences.
 
 Sections:
     Profile      — display name (read-only; future: editable)
