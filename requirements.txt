@@ -30,3 +30,7 @@ pytest-cov==5.0.0
 
 # Utilities
 Pillow==11.2.1
+
+# ── Web app (python webapp.py) ──────────────────────────────────────────
+flask==3.1.2
+waitress==3.0.2

@@ -28,3 +28,7 @@ matplotlib==3.10.8
 Pillow==12.1.1
 
 # ── AI Feedback (optional — app works without this) ─────────────────────
+
+# ── Web app (python webapp.py) ──────────────────────────────────────────
+flask==3.1.2
+waitress==3.0.2

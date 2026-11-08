@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Processing{% endblock %}
+{% block content %}
+<section class="card processing" id="processing" data-status-url="{{ url_for('web.api_status', session_id=session_id) }}">
+  <div class="spinner" aria-hidden="true"></div>
+  <h1 id="proc-title">Working on your feedback…</h1>
+  <p class="muted" id="proc-message" aria-live="polite">Getting started…</p>
+  <ol class="proc-steps">
+    <li data-step="saving">Save recording</li>
+    <li data-step="transcribing">Transcribe speech</li>
+    <li data-step="analysing">Score your speaking</li>
+  </ol>
+  <div class="actions" id="proc-actions" hidden>
+    <a class="btn btn-primary" href="{{ url_for('web.practice') }}">Try another topic</a>
+    <a class="btn btn-ghost" href="{{ url_for('web.dashboard') }}">Back to dashboard</a>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='processing.js') }}"></script>{% endblock %}

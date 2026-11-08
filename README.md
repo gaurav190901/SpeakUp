@@ -1,6 +1,6 @@
 # SpeakUp
 
-**SpeakUp** is a desktop application for English speaking practice and confidence improvement.
+**SpeakUp** is an English speaking-practice app that runs in your browser on your own computer (a desktop version is also included).
 Record yourself speaking about a topic, get an accurate transcript using OpenAI Whisper, and receive detailed feedback on your fluency, vocabulary, grammar, and confidence. Recordings, transcripts, and practice history are stored on your machine. When OpenAI transcription is enabled (an `OPENAI_API_KEY` is set), each session's audio is sent to OpenAI for transcription; without a key, everything runs locally.
 
 ---
@@ -9,7 +9,8 @@ Record yourself speaking about a topic, get an accurate transcript using OpenAI 
 
 | Feature | Status |
 |---|---|
-| Random topic assignment (140 topics, 14 categories) | ✅ |
+| Web app in your browser, running locally (`python webapp.py`) | ✅ |
+| Random topic assignment (140 topics, 14 categories) with talking-point hints | ✅ |
 | Local email/password accounts with separate progress | ✅ |
 | Camera + microphone recording | ✅ |
 | Speech transcription (OpenAI Whisper API) | ✅ |
@@ -51,11 +52,23 @@ python -m venv .venv
 pip install -r requirements-prod.txt
 ```
 
-### Run
+### Run the web app (recommended)
+
+```powershell
+python webapp.py
+```
+
+Or double-click **`Start SpeakUp.bat`**. SpeakUp opens at <http://127.0.0.1:5000> in your default browser. The server only listens on this computer (`127.0.0.1`), so other devices on your network can't reach it. Allow microphone access when the browser asks. Press **Ctrl+C** in the console window to stop it.
+
+Options: `--port 8080` to use another port, `--no-browser` to skip opening a tab.
+
+### Run the desktop app
 
 ```powershell
 python app.py
 ```
+
+Both versions share the same database, accounts and history.
 
 On first launch, SpeakUp will:
 1. Create a local SQLite database (`speakup.db`)
@@ -132,7 +145,11 @@ speakup/
 │   ├── feedback_service.py   Local + LLM feedback providers
 │   ├── progress_service.py   Dashboard data aggregation
 │   └── gamification_service.py  Achievements, streaks, goals
-└── ui/
+├── web/                      Browser app (Flask)
+│   ├── views.py              Pages and JSON endpoints
+│   ├── processing.py         Background transcription + analysis of uploads
+│   ├── templates/, static/   HTML, CSS and JavaScript (no external CDNs)
+└── ui/                       Desktop app (PySide6)
     ├── main_window.py        Application shell + navigation
     └── pages/                One file per screen
 ```
@@ -210,6 +227,7 @@ The suite runs fully offline (no camera, microphone, network or model downloads)
 | `test_ai_feedback.py` | Local and LLM feedback |
 | `test_gamification.py` | Streaks, achievements, goals |
 | `test_production_readiness.py` | History, main window, settings |
+| `test_web.py` | Web app: accounts, CSRF, pages, recording pipeline, per-user access |
 
 ---
 

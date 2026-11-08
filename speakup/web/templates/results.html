@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Results · {{ r.topic }}{% endblock %}
+{% block content %}
+<header class="page-head page-head-row">
+  <div>
+    <small class="eyebrow">Session results</small>
+    <h1>{{ r.topic }}</h1>
+    <p class="muted">{{ r.category }} · {{ r.difficulty }} · {{ r.duration_text }} spoken{% if r.completed_at %} · {{ r.completed_at.strftime('%d %b %Y, %H:%M') }}{% endif %}</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ url_for('web.practice') }}">🎤 Practise again</a>
+    <a class="btn btn-ghost" href="{{ url_for('web.dashboard') }}">Dashboard</a>
+  </div>
+</header>
+
+{% if r.has_analysis %}
+  <div class="scores">
+    {% for s in r.scores %}
+      <div class="card score score-{{ s.band }}{% if loop.first %} score-main{% endif %}">
+        <small class="eyebrow">{{ s.label }}</small>
+        <strong>{{ '%.0f'|format(s.value) if s.value is not none else '—' }}</strong>
+        <div class="bar"><span style="--w: {{ (s.value or 0)|round(0) }}%"></span></div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="grid grid-3">
+    <div class="card stat-mini"><small class="eyebrow">Words per minute</small><strong>{{ '%.0f'|format(r.wpm) if r.wpm is not none else '—' }}</strong><small class="muted">Natural pace is about 120–150</small></div>
+    <div class="card stat-mini"><small class="eyebrow">Filler words</small><strong>{{ r.filler_count if r.filler_count is not none else '—' }}</strong><small class="muted">"um", "like", "basically"…</small></div>
+    <div class="card stat-mini"><small class="eyebrow">Words spoken</small><strong>{{ r.word_count }}</strong><small class="muted">{{ r.pause_count or 0 }} long pauses</small></div>
+  </div>
+
+  <div class="grid grid-3 feedback">
+    <div class="card fb fb-good"><h2>✅ What went well</h2>
+      {% if r.strengths %}<ul>{% for i in r.strengths %}<li>{{ i }}</li>{% endfor %}</ul>{% else %}<p class="muted">Keep practising — strengths will show up here.</p>{% endif %}</div>
+    <div class="card fb fb-improve"><h2>🎯 To work on</h2>
+      {% if r.improvements %}<ul>{% for i in r.improvements %}<li>{{ i }}</li>{% endfor %}</ul>{% else %}<p class="muted">Nothing major — nice work!</p>{% endif %}</div>
+    <div class="card fb fb-tips"><h2>💡 Try next time</h2>
+      {% if r.suggestions %}<ul>{% for i in r.suggestions %}<li>{{ i }}</li>{% endfor %}</ul>{% else %}<p class="muted">Try a harder level for a new challenge.</p>{% endif %}</div>
+  </div>
+{% else %}
+  <div class="card empty">
+    <span class="empty-icon">⏳</span>
+    <strong>No scores for this session</strong>
+    <p class="muted">This recording wasn't analysed. Try another session.</p>
+  </div>
+{% endif %}
+
+<section class="card transcript">
+  <h2>📝 What you said</h2>
+  {% if r.transcript %}<p>{{ r.transcript }}</p>{% else %}<p class="muted">No transcript available.</p>{% endif %}
+</section>
+{% endblock %}
