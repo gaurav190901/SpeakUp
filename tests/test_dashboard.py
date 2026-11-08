@@ -815,3 +815,52 @@ class TestDashboardPageUI:
         assert "30d" in page._filter_btns
         assert "90d" in page._filter_btns
         assert "all" in page._filter_btns
+
+
+# ===========================================================================
+# 16. DashboardPage — welcome hero and empty state
+# ===========================================================================
+
+class TestDashboardWelcome:
+
+    def test_greeting_uses_first_name(self, engine):
+        from speakup.ui.pages.dashboard_page import DashboardPage
+        page = DashboardPage(user_name="Asha Kumar")
+        assert "Asha" in page._greeting()
+        assert "Kumar" not in page._greeting()
+
+    def test_greeting_without_name(self, engine):
+        from speakup.ui.pages.dashboard_page import DashboardPage
+        page = DashboardPage()
+        assert page._greeting().startswith("Good ")
+
+    def test_hero_text_for_new_and_returning_user(self, engine):
+        from speakup.ui.pages.dashboard_page import DashboardPage
+        page = DashboardPage(user_name="Asha")
+        page._update_hero(0)
+        assert "first session" in page._hero_button.text()
+        page._update_hero(3)
+        assert "3 times" in page._hero_subtitle.text()
+        page._update_hero(1)
+        assert "1 time " in page._hero_subtitle.text()
+
+    def test_hero_button_emits_start_practice(self, engine):
+        from speakup.ui.pages.dashboard_page import DashboardPage
+        page = DashboardPage()
+        fired = []
+        page.start_practice_requested.connect(lambda: fired.append(True))
+        page._hero_button.click()
+        assert fired == [True]
+
+    def test_empty_state_replaces_charts_without_data(self, engine):
+        from speakup.ui.pages.dashboard_page import DashboardPage
+        page = DashboardPage()
+        page._load_charts()
+        assert page._charts_section.isHidden()
+        assert not page._charts_empty.isHidden()
+
+    def test_main_window_hero_navigates_to_practice(self, engine):
+        from speakup.ui.main_window import MainWindow, PAGE_PRACTICE
+        win = MainWindow(user_name="Test")
+        win._dashboard_page._hero_button.click()
+        assert win._stack.currentIndex() == PAGE_PRACTICE
