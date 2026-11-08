@@ -37,7 +37,8 @@ class Settings:
     # ------------------------------------------------------------------ #
     APP_NAME: str = os.getenv("APP_NAME", "SpeakUp")
     APP_VERSION: str = os.getenv("APP_VERSION", "0.1.0")
-    APP_ENV: str = os.getenv("APP_ENV", "development")
+    # The packaged app defaults to production (no SQL query logging).
+    APP_ENV: str = os.getenv("APP_ENV", "production" if IS_FROZEN else "development")
 
     # ------------------------------------------------------------------ #
     #  Paths                                                                #

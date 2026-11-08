@@ -294,21 +294,29 @@ class SettingsPage(QWidget):
         sec = SettingsSection("🎨  Appearance")
         sec.add_row(SettingsRow(
             "Theme",
-            ReadOnlyField("Dark  (default)"),
-            "Light/dark toggle will be available in a future update.",
+            ReadOnlyField("Dark"),
+            "A calm dark theme that's easy on the eyes.",
         ))
         return sec
 
     def _build_data_section(self) -> SettingsSection:
         sec = SettingsSection("💾  Data & Privacy")
+        uses_openai = (
+            settings.TRANSCRIPTION_BACKEND == "openai_whisper"
+            and settings.has_openai_key()
+        )
         sec.add_row(SettingsRow(
-            "Database Location",
-            ReadOnlyField("speakup.db  (local)"),
-            "All data is stored locally. Nothing is sent to any server.",
+            "Speech-to-text",
+            ReadOnlyField("OpenAI Whisper (online)" if uses_openai
+                          else "On this computer (offline)"),
+            "Your recording's audio is sent to OpenAI to be transcribed."
+            if uses_openai else
+            "Transcription runs on this computer. Nothing is uploaded.",
         ))
         sec.add_row(SettingsRow(
-            "Recordings",
-            ReadOnlyField("recordings/  (local)"),
+            "Data Folder",
+            ReadOnlyField(str(settings.APP_DATA_DIR)),
+            "Your account, practice history and recordings are saved here.",
         ))
 
         # "Manage Data" button — navigates to DataManagementPage
