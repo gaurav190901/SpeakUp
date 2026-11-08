@@ -318,10 +318,17 @@ class DashboardPage(QWidget):
     """
 
     view_session = Signal(int)   # session_id
+    start_practice_requested = Signal()
 
-    def __init__(self, user_id: int = 1, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        user_id: int = 1,
+        parent: QWidget | None = None,
+        user_name: str = "",
+    ) -> None:
         super().__init__(parent)
         self._user_id      = user_id
+        self._user_name    = user_name.strip()
         self._date_range   = "all"
         self._svc          = ProgressService()
         self._gam_svc      = GamificationService()
@@ -351,6 +358,9 @@ class DashboardPage(QWidget):
         self._layout.setSpacing(20)
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        # ── Welcome hero with a clear call to action ─────────────────────
+        self._build_hero()
+
         # ── Header + filter ───────────────────────────────────────────────
         self._build_header()
 
@@ -361,10 +371,37 @@ class DashboardPage(QWidget):
         self._build_stat_cards()
 
         # ── Charts (3 × 2) ───────────────────────────────────────────────
+        self._charts_section = QWidget()
+        charts_layout = QVBoxLayout(self._charts_section)
+        charts_layout.setContentsMargins(0, 0, 0, 0)
+        charts_layout.setSpacing(14)
         charts_title = QLabel("Progress Over Sessions")
         charts_title.setObjectName("SectionTitle")
-        self._layout.addWidget(charts_title)
+        charts_layout.addWidget(charts_title)
+        self._charts_grid_parent = charts_layout
         self._build_charts()
+        self._layout.addWidget(self._charts_section)
+
+        self._charts_empty = QFrame()
+        self._charts_empty.setObjectName("EmptyCard")
+        empty_layout = QVBoxLayout(self._charts_empty)
+        empty_layout.setContentsMargins(24, 28, 24, 28)
+        empty_layout.setSpacing(6)
+        empty_icon = QLabel("📈")
+        empty_icon.setObjectName("EmptyIcon")
+        empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_title = QLabel("Your progress charts will appear here")
+        empty_title.setObjectName("EmptyTitle")
+        empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_text = QLabel("Finish your first practice session to start tracking "
+                            "confidence, fluency and speaking speed over time.")
+        empty_text.setObjectName("EmptyText")
+        empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_text.setWordWrap(True)
+        for w in (empty_icon, empty_title, empty_text):
+            empty_layout.addWidget(w)
+        self._charts_empty.setVisible(False)
+        self._layout.addWidget(self._charts_empty)
 
         # ── Recent sessions ───────────────────────────────────────────────
         recent_title = QLabel("Recent Sessions")
@@ -468,7 +505,7 @@ class DashboardPage(QWidget):
     def _build_header(self) -> None:
         row = QHBoxLayout()
 
-        title = QLabel("Progress Dashboard")
+        title = QLabel("Your Progress")
         title.setObjectName("PageTitle")
 
         row.addWidget(title)
@@ -493,7 +530,7 @@ class DashboardPage(QWidget):
         self._filter_btns["all"].setChecked(True)
         self._layout.addLayout(row)
 
-        subtitle = QLabel("Your speaking practice overview")
+        subtitle = QLabel("How your speaking is improving over time")
         subtitle.setObjectName("PageSubtitle")
         self._layout.addWidget(subtitle)
 
@@ -534,7 +571,57 @@ class DashboardPage(QWidget):
             chart._int_y    = is_int       # type: ignore[attr-defined]
             self._charts[key] = chart
             grid.addWidget(chart, i // 2, i % 2)
-        self._layout.addLayout(grid)
+        self._charts_grid_parent.addLayout(grid)
+
+    def _build_hero(self) -> None:
+        """Greeting card with the main "start practising" action."""
+        hero = QFrame()
+        hero.setObjectName("HeroCard")
+        layout = QHBoxLayout(hero)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(20)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(6)
+        self._hero_title = QLabel(self._greeting())
+        self._hero_title.setObjectName("HeroTitle")
+        self._hero_subtitle = QLabel("Ready to practise? It only takes a minute.")
+        self._hero_subtitle.setObjectName("HeroSubtitle")
+        self._hero_subtitle.setWordWrap(True)
+        text_col.addWidget(self._hero_title)
+        text_col.addWidget(self._hero_subtitle)
+        layout.addLayout(text_col, stretch=1)
+
+        self._hero_button = QPushButton("🎤   Start practising")
+        self._hero_button.setObjectName("HeroButton")
+        self._hero_button.setFixedHeight(46)
+        self._hero_button.setMinimumWidth(200)
+        self._hero_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._hero_button.clicked.connect(self.start_practice_requested.emit)
+        layout.addWidget(self._hero_button, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+        self._layout.addWidget(hero)
+
+    def _greeting(self) -> str:
+        from datetime import datetime  # noqa: PLC0415
+        hour = datetime.now().hour
+        part = "morning" if hour < 12 else "afternoon" if hour < 18 else "evening"
+        name = f", {self._user_name.split()[0]}" if self._user_name else ""
+        return f"Good {part}{name} 👋"
+
+    def _update_hero(self, total_sessions: int) -> None:
+        self._hero_title.setText(self._greeting())
+        if total_sessions <= 0:
+            self._hero_subtitle.setText(
+                "Ready for your first session? Pick a topic and talk for one minute "
+                "— we'll show you how you did.")
+            self._hero_button.setText("🎤   Start your first session")
+        else:
+            times = "time" if total_sessions == 1 else "times"
+            self._hero_subtitle.setText(
+                f"You've practised {total_sessions} {times} so far. "
+                "Keep the momentum going!")
+            self._hero_button.setText("🎤   Practise now")
 
     # ------------------------------------------------------------------ #
     # Data loading                                                          #
@@ -552,6 +639,7 @@ class DashboardPage(QWidget):
             deltas   = self._svc.get_improvement_delta(self._user_id, date_range=self._date_range)
             delta_ui = map_delta(deltas)
             cards    = map_stat_cards(stats)
+            self._update_hero(int(stats.get("total_sessions") or 0))
 
             for card_data in cards:
                 key  = card_data["key"]
@@ -571,7 +659,10 @@ class DashboardPage(QWidget):
             raw    = self._svc.get_chart_data(self._user_id, self._date_range)
             series = map_chart_series(raw)
 
-            if not series.get("has_data"):
+            has_data = bool(series.get("has_data"))
+            self._charts_section.setVisible(has_data)
+            self._charts_empty.setVisible(not has_data)
+            if not has_data:
                 for chart in self._charts.values():
                     chart._draw_empty()
                 return
@@ -828,6 +919,33 @@ class DashboardPage(QWidget):
             #DashboardScroll, #DashboardContent {{
                 background-color: {c.COLOR_BG_DARK};
             }}
+            #HeroCard {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #2A2366, stop:1 #1B1840);
+                border: 1px solid rgba(108, 99, 255, 0.35);
+                border-radius: 16px;
+            }}
+            #HeroTitle {{ font-size: 24px; font-weight: 700; color: #FFFFFF; }}
+            #HeroSubtitle {{ font-size: 14px; color: #C9C6F5; }}
+            #HeroButton {{
+                background-color: {c.COLOR_ACCENT};
+                color: #FFFFFF;
+                border: none;
+                border-radius: 12px;
+                font-size: 15px;
+                font-weight: 600;
+                padding: 0px 22px;
+            }}
+            #HeroButton:hover {{ background-color: {c.COLOR_ACCENT_HOVER}; }}
+            #HeroButton:pressed {{ background-color: #5a52e0; }}
+            #EmptyCard {{
+                background-color: {c.COLOR_BG_CARD};
+                border: 1px dashed #343850;
+                border-radius: 12px;
+            }}
+            #EmptyIcon {{ font-size: 28px; }}
+            #EmptyTitle {{ font-size: 15px; font-weight: 600; color: {c.COLOR_TEXT_PRIMARY}; }}
+            #EmptyText {{ font-size: 13px; color: {c.COLOR_TEXT_SECONDARY}; }}
             #PageTitle {{
                 font-size: 22px;
                 font-weight: 700;

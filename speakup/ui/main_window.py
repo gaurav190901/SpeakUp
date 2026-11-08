@@ -147,7 +147,9 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         self._stack.setObjectName("ContentStack")
 
-        self._dashboard_page      = DashboardPage(user_id=self._user_id)
+        self._dashboard_page      = DashboardPage(
+            user_id=self._user_id, user_name=self._user_name
+        )
         self._practice_page       = PracticePage(user_id=self._user_id)
         self._history_page        = HistoryPage(user_id=self._user_id)
         self._settings_page       = SettingsPage(
@@ -189,6 +191,9 @@ class MainWindow(QMainWindow):
 
         # Connect DashboardPage view_session signal
         self._dashboard_page.view_session.connect(self._on_view_session_from_dashboard)
+        self._dashboard_page.start_practice_requested.connect(
+            lambda: self._navigate_to(PAGE_PRACTICE)
+        )
 
         # Connect HistoryPage view_session → results page
         self._history_page.view_session.connect(self._on_view_session_from_history)
@@ -226,17 +231,27 @@ class MainWindow(QMainWindow):
         logo_container = QWidget()
         logo_container.setObjectName("LogoContainer")
         logo_container.setFixedHeight(72)
-        logo_layout = QVBoxLayout(logo_container)
-        logo_layout.setContentsMargins(24, 0, 24, 0)
+        logo_layout = QHBoxLayout(logo_container)
+        logo_layout.setContentsMargins(20, 0, 20, 0)
+        logo_layout.setSpacing(12)
         logo_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
+        logo_badge = QLabel("🎙️")
+        logo_badge.setObjectName("LogoBadge")
+        logo_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo_badge.setFixedSize(38, 38)
+        logo_layout.addWidget(logo_badge)
+
+        name_col = QVBoxLayout()
+        name_col.setSpacing(0)
         app_label = QLabel(settings.APP_NAME)
         app_label.setObjectName("AppNameLabel")
-        logo_layout.addWidget(app_label)
-
+        name_col.addWidget(app_label)
         tagline = QLabel("Speaking Practice")
         tagline.setObjectName("TaglineLabel")
-        logo_layout.addWidget(tagline)
+        name_col.addWidget(tagline)
+        logo_layout.addLayout(name_col)
+        logo_layout.addStretch()
 
         layout.addWidget(logo_container)
 
@@ -269,30 +284,48 @@ class MainWindow(QMainWindow):
         # ---- User info footer ----
         footer = QWidget()
         footer.setObjectName("SidebarFooter")
-        footer.setFixedHeight(116)
         footer_layout = QVBoxLayout(footer)
-        footer_layout.setContentsMargins(24, 0, 24, 0)
-        footer_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        footer_layout.setContentsMargins(16, 16, 16, 14)
+        footer_layout.setSpacing(12)
 
+        user_row = QHBoxLayout()
+        user_row.setSpacing(10)
+        initials = "".join(part[0] for part in self._user_name.split()[:2]).upper() or "?"
+        avatar = QLabel(initials)
+        avatar.setObjectName("UserAvatar")
+        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        avatar.setFixedSize(36, 36)
+        user_row.addWidget(avatar)
+
+        user_col = QVBoxLayout()
+        user_col.setSpacing(0)
         user_label = QLabel(self._user_name)
         user_label.setObjectName("UserNameLabel")
-        footer_layout.addWidget(user_label)
+        user_col.addWidget(user_label)
+        account_label = QLabel("Local account")
+        account_label.setObjectName("AccountTypeLabel")
+        user_col.addWidget(account_label)
+        user_row.addLayout(user_col, stretch=1)
+        footer_layout.addLayout(user_row)
 
-        switch_profile_button = QPushButton("Switch account")
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        switch_profile_button = QPushButton("⇄  Switch")
         switch_profile_button.setObjectName("SwitchProfileButton")
-        switch_profile_button.setFixedHeight(26)
+        switch_profile_button.setFixedHeight(30)
         switch_profile_button.setCursor(Qt.CursorShape.PointingHandCursor)
         switch_profile_button.setToolTip("Sign in to another account or create one")
         switch_profile_button.clicked.connect(self._on_switch_profile)
         self._switch_profile_button = switch_profile_button
-        footer_layout.addWidget(switch_profile_button)
+        actions.addWidget(switch_profile_button)
 
         sign_out_button = QPushButton("Sign out")
         sign_out_button.setObjectName("SignOutButton")
-        sign_out_button.setFixedHeight(26)
+        sign_out_button.setFixedHeight(30)
         sign_out_button.setCursor(Qt.CursorShape.PointingHandCursor)
         sign_out_button.clicked.connect(self.logout_requested.emit)
-        footer_layout.addWidget(sign_out_button)
+        actions.addWidget(sign_out_button)
+        footer_layout.addLayout(actions)
 
         version_label = QLabel(f"v{settings.APP_VERSION}")
         version_label.setObjectName("VersionLabel")
@@ -722,6 +755,13 @@ QMainWindow, #RootWidget {{
     letter-spacing: 0.5px;
 }}
 
+#LogoBadge {{
+    font-size: 18px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2A2366, stop:1 #1B1840);
+    border: 1px solid rgba(108, 99, 255, 0.45);
+    border-radius: 10px;
+}}
+
 #TaglineLabel {{
     font-size: 11px;
     color: {c.COLOR_TEXT_MUTED};
@@ -760,37 +800,50 @@ QMainWindow, #RootWidget {{
     background-color: {c.COLOR_BG_SIDEBAR};
 }}
 
+#UserAvatar {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #8A82FF, stop:1 #5A50E6);
+    color: #FFFFFF;
+    border-radius: 18px;
+    font-size: 13px;
+    font-weight: 700;
+}}
+
 #UserNameLabel {{
     font-size: 13px;
     font-weight: 600;
-    color: {c.COLOR_TEXT_SECONDARY};
+    color: {c.COLOR_TEXT_PRIMARY};
+}}
+
+#AccountTypeLabel {{
+    font-size: 11px;
+    color: {c.COLOR_TEXT_MUTED};
+}}
+
+#SwitchProfileButton, #SignOutButton {{
+    background-color: transparent;
+    border: 1px solid {c.COLOR_BORDER};
+    border-radius: 8px;
+    padding: 0px 10px;
+    font-size: 12px;
+    font-weight: 600;
 }}
 
 #SwitchProfileButton {{
-    background-color: transparent;
-    color: {c.COLOR_ACCENT};
-    border: none;
-    padding: 0px;
-    text-align: left;
-    font-size: 11px;
-    font-weight: 600;
+    color: {c.COLOR_TEXT_SECONDARY};
 }}
 
 #SwitchProfileButton:hover {{
-    color: {c.COLOR_ACCENT_HOVER};
+    color: {c.COLOR_TEXT_PRIMARY};
+    border-color: {c.COLOR_ACCENT};
+    background-color: rgba(108, 99, 255, 0.10);
 }}
 
 #SignOutButton {{
-    background-color: transparent;
-    color: {c.COLOR_DANGER};
-    border: none;
-    padding: 0px;
-    text-align: left;
-    font-size: 11px;
-    font-weight: 600;
+    color: #FF8A80;
 }}
 
 #SignOutButton:hover {{
+    border-color: {c.COLOR_DANGER};
     background-color: rgba(244, 67, 54, 0.10);
 }}
 

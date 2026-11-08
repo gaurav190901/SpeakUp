@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Welcome{% endblock %}
+{% block body_class %}landing{% endblock %}
+{% block body %}
+<div class="landing-wrap">
+  <section class="landing-brand">
+    <div class="brand brand-lg">
+      <span class="brand-badge" aria-hidden="true">🎙️</span>
+      <span class="brand-text"><strong>SpeakUp</strong></span>
+    </div>
+    <h1>Speak English<br>with confidence.</h1>
+    <p class="lead">Practise speaking for a minute a day and get friendly, useful feedback.</p>
+    <ul class="features">
+      <li><span aria-hidden="true">🎯</span><div><strong>A fresh topic every time</strong><small>140 everyday topics, from easy to advanced.</small></div></li>
+      <li><span aria-hidden="true">📝</span><div><strong>Instant transcript &amp; feedback</strong><small>See what you said and how to improve.</small></div></li>
+      <li><span aria-hidden="true">📈</span><div><strong>Watch yourself improve</strong><small>Streaks, goals and progress charts.</small></div></li>
+    </ul>
+    <p class="privacy">🔒 Runs on this computer — your account and recordings never leave it.</p>
+  </section>
+
+  <section class="landing-form" aria-label="Account">
+    <div class="segmented" role="tablist">
+      <a role="tab" href="{{ url_for('web.landing', mode='signin') }}" class="{% if mode == 'signin' %}is-active{% endif %}" aria-selected="{{ 'true' if mode == 'signin' else 'false' }}">Sign in</a>
+      <a role="tab" href="{{ url_for('web.landing', mode='signup') }}" class="{% if mode == 'signup' %}is-active{% endif %}" aria-selected="{{ 'true' if mode == 'signup' else 'false' }}">Create account</a>
+    </div>
+
+    {% if mode == 'signin' %}
+      <h2>Welcome back 👋</h2>
+      <p class="muted">Sign in to continue your practice.</p>
+      <form method="post" action="{{ url_for('web.login') }}" class="form" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" value="{{ form.email or '' }}" required autofocus>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Your password" required>
+        <label class="check"><input type="checkbox" data-show-password="password"> Show password</label>
+        {% if error %}<div class="alert" role="alert">⚠️ {{ error }}</div>{% endif %}
+        <button class="btn btn-primary btn-lg btn-block" type="submit">Sign in</button>
+      </form>
+      <p class="switch">New here? <a href="{{ url_for('web.landing', mode='signup') }}">Create an account</a></p>
+    {% else %}
+      <h2>Create your account</h2>
+      <p class="muted">It takes 30 seconds and works offline.</p>
+      <form method="post" action="{{ url_for('web.signup') }}" class="form" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-row">
+          <div><label for="name">Name</label>
+            <input id="name" name="name" autocomplete="name" placeholder="Your name" maxlength="100" value="{{ form.name or '' }}" required autofocus></div>
+          <div><label for="su-email">Email</label>
+            <input id="su-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" value="{{ form.email or '' }}" required></div>
+        </div>
+        <div class="form-row">
+          <div><label for="su-password">Password</label>
+            <input id="su-password" name="password" type="password" autocomplete="new-password" placeholder="At least 10 characters" minlength="10" maxlength="128" required></div>
+          <div><label for="su-confirm">Confirm password</label>
+            <input id="su-confirm" name="confirm" type="password" autocomplete="new-password" placeholder="Type it again" maxlength="128" required></div>
+        </div>
+        <label class="check"><input type="checkbox" data-show-password="su-password su-confirm"> Show password</label>
+        <p class="note">Used SpeakUp before accounts existed? Sign up with the same name to keep your practice history.</p>
+        {% if error %}<div class="alert" role="alert">⚠️ {{ error }}</div>{% endif %}
+        <button class="btn btn-primary btn-lg btn-block" type="submit">Create account</button>
+      </form>
+      <p class="switch">Already have an account? <a href="{{ url_for('web.landing', mode='signin') }}">Sign in</a></p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='app.js') }}"></script>{% endblock %}

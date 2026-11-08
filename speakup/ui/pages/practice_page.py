@@ -1,7 +1,7 @@
 """
 PracticePage — topic assignment and session management UI.
 
-Chunk 2 layout
+Layout
 ──────────────
 ┌─ Page header ───────────────────────────────────────────────────────┐
 │  "Today's Practice"                                                  │
@@ -62,9 +62,23 @@ from PySide6.QtWidgets import (
 )
 
 from speakup.config.settings import settings
+from speakup.data.words.loader import (
+    DIFFICULTY_HINTS,
+    DIFFICULTY_ICONS,
+    category_with_icon,
+    format_hints_html,
+    get_topic_hints,
+)
 from speakup.services.word_service import WordService, POOL_EXHAUSTED_MESSAGE
 
 logger = logging.getLogger(__name__)
+
+
+def _difficulty_with_icon(label: str | None) -> str:
+    if not label:
+        return "—"
+    icon = DIFFICULTY_ICONS.get(label)
+    return f"{icon}  {label}" if icon else label
 
 # ── UI page states ──────────────────────────────────────────────────────────
 _STATE_IDLE         = "idle"
@@ -95,18 +109,23 @@ class _FilterBar(QWidget):
         self._cat_combo.setObjectName("FilterCombo")
         self._cat_combo.setFixedHeight(38)
         self._cat_combo.setMinimumWidth(180)
-        self._cat_combo.addItem("All Categories")
+        self._cat_combo.addItem("🗂️  All Categories", None)
         for cat in self._ws.get_categories():
-            self._cat_combo.addItem(cat)
+            self._cat_combo.addItem(category_with_icon(cat), cat)
 
         # Difficulty combo
         self._diff_combo = QComboBox()
         self._diff_combo.setObjectName("FilterCombo")
         self._diff_combo.setFixedHeight(38)
         self._diff_combo.setMinimumWidth(150)
-        self._diff_combo.addItem("All Levels")
+        self._diff_combo.addItem("All Levels", None)
         for label in self._ws.get_difficulty_labels():
-            self._diff_combo.addItem(label)
+            self._diff_combo.addItem(_difficulty_with_icon(label), label)
+            self._diff_combo.setItemData(
+                self._diff_combo.count() - 1,
+                DIFFICULTY_HINTS.get(label, ""),
+                Qt.ItemDataRole.ToolTipRole,
+            )
 
         # New Topic button
         self._new_btn = QPushButton("🔀  New Topic")
@@ -124,13 +143,11 @@ class _FilterBar(QWidget):
 
     @property
     def selected_category(self) -> str | None:
-        text = self._cat_combo.currentText()
-        return None if text == "All Categories" else text
+        return self._cat_combo.currentData()
 
     @property
     def selected_difficulty(self) -> str | None:
-        text = self._diff_combo.currentText()
-        return None if text == "All Levels" else text
+        return self._diff_combo.currentData()
 
     def set_enabled(self, enabled: bool) -> None:
         self._cat_combo.setEnabled(enabled)
@@ -175,6 +192,8 @@ class _TopicCard(QFrame):
         self._word_label.setObjectName("TopicWord")
         self._word_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._word_label.setWordWrap(True)
+        # Room for two lines so long titles (e.g. debate questions) aren't clipped
+        self._word_label.setMinimumHeight(100)
         word_layout.addWidget(self._word_label)
 
         outer.addWidget(word_frame)
@@ -182,7 +201,7 @@ class _TopicCard(QFrame):
         # ── Category / Difficulty row ──────────────────────────────────────
         meta_row = QHBoxLayout()
         meta_row.setSpacing(32)
-        meta_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        meta_row.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
         cat_col = QVBoxLayout()
         cat_col.setSpacing(2)
@@ -192,6 +211,8 @@ class _TopicCard(QFrame):
         self._cat_value.setObjectName("MetaValue")
         cat_col.addWidget(cat_lbl)
         cat_col.addWidget(self._cat_value)
+        cat_col.addStretch()
+        cat_col.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         diff_col = QVBoxLayout()
         diff_col.setSpacing(2)
@@ -201,6 +222,12 @@ class _TopicCard(QFrame):
         self._diff_value.setObjectName("MetaValue")
         diff_col.addWidget(diff_lbl)
         diff_col.addWidget(self._diff_value)
+
+        self._diff_hint = QLabel("")
+        self._diff_hint.setObjectName("DifficultyHint")
+        self._diff_hint.setWordWrap(False)
+        diff_col.addWidget(self._diff_hint)
+        diff_col.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         meta_row.addLayout(cat_col)
         meta_row.addLayout(diff_col)
@@ -214,9 +241,19 @@ class _TopicCard(QFrame):
         self._desc_label.setVisible(False)
         outer.addWidget(self._desc_label)
 
+        # ── Ideas to talk about ────────────────────────────────────────────
+        self._hints_label = QLabel("")
+        self._hints_label.setObjectName("TopicHints")
+        self._hints_label.setWordWrap(True)
+        self._hints_label.setTextFormat(Qt.TextFormat.RichText)
+        self._hints_label.setVisible(False)
+        outer.addWidget(self._hints_label)
+
         # ── Instruction banner ─────────────────────────────────────────────
+        minutes = max(1, round(settings.MIN_SPEAKING_DURATION / 60))
         self._instruction = QLabel(
-            "ℹ️   Speak about this topic in English for at least 1 minute."
+            f"ℹ️   Talk for at least {minutes} minute{'s' if minutes != 1 else ''}. "
+            "There are no wrong answers — just keep going!"
         )
         self._instruction.setObjectName("InstructionLabel")
         self._instruction.setWordWrap(True)
@@ -245,7 +282,9 @@ class _TopicCard(QFrame):
         self._word_label.setText("Loading…")
         self._cat_value.setText("—")
         self._diff_value.setText("—")
+        self._diff_hint.setText("")
         self._desc_label.setVisible(False)
+        self._hints_label.setVisible(False)
         self._instruction.setVisible(False)
         self._start_btn.setEnabled(False)
         self._start_btn.setCursor(Qt.CursorShape.ForbiddenCursor)
@@ -257,12 +296,18 @@ class _TopicCard(QFrame):
         else:
             self._cancel_topic_shuffle()
             self._word_label.setText(word)
-        self._cat_value.setText(topic.get("category") or "—")
-        self._diff_value.setText(topic.get("difficulty_display") or "—")
+        self._cat_value.setText(category_with_icon(topic.get("category")))
+        level = topic.get("difficulty_display")
+        self._diff_value.setText(_difficulty_with_icon(level))
+        self._diff_hint.setText(DIFFICULTY_HINTS.get(level or "", ""))
 
         desc = topic.get("description") or ""
         self._desc_label.setText(desc)
         self._desc_label.setVisible(bool(desc))
+
+        hints = topic.get("hints") or get_topic_hints(topic.get("word"))
+        self._hints_label.setText(format_hints_html(hints))
+        self._hints_label.setVisible(bool(hints))
         self._instruction.setVisible(True)
 
         self._start_btn.setEnabled(True)
@@ -310,6 +355,8 @@ class _TopicCard(QFrame):
         self._word_label.setText("🏆")
         self._cat_value.setText("—")
         self._diff_value.setText("—")
+        self._diff_hint.setText("")
+        self._hints_label.setVisible(False)
         self._desc_label.setText(message or POOL_EXHAUSTED_MESSAGE)
         self._desc_label.setVisible(True)
         self._instruction.setVisible(False)
@@ -356,9 +403,22 @@ class _TopicCard(QFrame):
                 color: {c.COLOR_TEXT_PRIMARY};
             }}
             #TopicDescription {{
-                font-size: 13px;
-                color: {c.COLOR_TEXT_SECONDARY};
+                font-size: 16px;
+                font-weight: 500;
+                color: {c.COLOR_TEXT_PRIMARY};
                 line-height: 1.6;
+            }}
+            #DifficultyHint {{
+                font-size: 12px;
+                color: {c.COLOR_TEXT_MUTED};
+            }}
+            #TopicHints {{
+                font-size: 14px;
+                color: {c.COLOR_TEXT_SECONDARY};
+                background-color: rgba(255, 193, 7, 0.08);
+                border: 1px solid rgba(255, 193, 7, 0.25);
+                border-radius: 8px;
+                padding: 10px 14px;
             }}
             #InstructionLabel {{
                 font-size: 13px;
@@ -728,7 +788,7 @@ class PracticePage(QWidget):
                 # Map DB value → display label
                 from speakup.data.words.loader import DIFFICULTY_DISPLAY
                 label = DIFFICULTY_DISPLAY.get(diff_pref, diff_pref.capitalize())
-                idx = self._filter_bar._diff_combo.findText(label)
+                idx = self._filter_bar._diff_combo.findData(label)
                 if idx >= 0:
                     self._filter_bar._diff_combo.setCurrentIndex(idx)
         except Exception as exc:

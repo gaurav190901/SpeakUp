@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <h1>{{ greeting }}</h1>
+    {% if total_sessions == 0 %}
+      <p>Ready for your first session? Pick a topic and talk for one minute — we'll show you how you did.</p>
+    {% else %}
+      <p>You've practised {{ total_sessions }} {{ 'time' if total_sessions == 1 else 'times' }} so far. Keep the momentum going!</p>
+    {% endif %}
+  </div>
+  <a class="btn btn-primary btn-lg" href="{{ url_for('web.practice') }}">🎤 {{ 'Start your first session' if total_sessions == 0 else 'Practise now' }}</a>
+</section>
+
+{% if show_welcome %}
+<section class="card welcome-steps">
+  <h2>How SpeakUp works</h2>
+  <ol class="steps">
+    <li><span>🎯</span><strong>Get a topic</strong><small>Pick a category and level, or take a random one.</small></li>
+    <li><span>🎤</span><strong>Talk for a minute</strong><small>Use the hints if you get stuck. There are no wrong answers.</small></li>
+    <li><span>📝</span><strong>Read your transcript</strong><small>See exactly what you said.</small></li>
+    <li><span>📊</span><strong>Get your scores</strong><small>Fluency, vocabulary, grammar and confidence.</small></li>
+    <li><span>🔥</span><strong>Build a streak</strong><small>Practise every day to unlock achievements.</small></li>
+  </ol>
+</section>
+{% endif %}
+
+<div class="section-head">
+  <div>
+    <h2>Your progress</h2>
+    <p class="muted">How your speaking is improving over time</p>
+  </div>
+  <nav class="pills" aria-label="Date range">
+    {% for key, label in date_ranges %}
+      <a href="{{ url_for('web.dashboard', range=key) }}" class="pill{% if date_range == key %} is-active{% endif %}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+<div class="grid grid-3">
+  <div class="card stat-inline">
+    <span class="stat-icon">🔥</span>
+    <div>
+      {% if snapshot.streak.current_streak %}
+        <strong>{{ snapshot.streak.current_streak }}-day streak</strong>
+        <small>Best: {{ snapshot.streak.longest_streak }} {{ 'day' if snapshot.streak.longest_streak == 1 else 'days' }}</small>
+      {% else %}
+        <strong>No streak yet</strong><small>Practise today to start one</small>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card stat-inline">
+    <span class="stat-icon">⭐</span>
+    <div>
+      <strong>Personal best: {{ '%.0f'|format(snapshot.personal_best.best_overall_score) if snapshot.personal_best.best_overall_score is not none else '—' }}</strong>
+      <small>Highest overall score</small>
+    </div>
+  </div>
+  <div class="card goal">
+    <div class="goal-head">
+      <strong>Today's goal · {{ snapshot.daily_goal.goal_label }}</strong>
+      <span class="{% if snapshot.daily_goal.completed %}text-good{% else %}text-accent{% endif %}">
+        {{ '✅ Done!' if snapshot.daily_goal.completed else '%d%%'|format(snapshot.daily_goal.progress_pct * 100) }}
+      </span>
+    </div>
+    <div class="bar"><span style="--w: {{ (snapshot.daily_goal.progress_pct * 100)|round(0) }}%"></span></div>
+  </div>
+</div>
+
+<div class="grid grid-3">
+  {% for card in cards %}
+    <div class="card stat stat-{{ card.key }}">
+      <small class="eyebrow">{{ card.title }}</small>
+      <strong class="stat-value">{{ card.value }}</strong>
+      <small class="muted">{{ card.subtitle }}</small>
+    </div>
+  {% endfor %}
+</div>
+
+{% if chart.has_data %}
+  <h2 class="section-title">Progress over sessions</h2>
+  <div class="grid grid-3">
+    {% for key, title, colour in [('overall','Overall score','#6C63FF'), ('confidence','Confidence','#FF9800'), ('fluency','Fluency','#00BCD4'), ('wpm','Words per minute','#4CAF50'), ('duration_min','Minutes spoken','#2196F3'), ('filler_counts','Filler words','#F44336')] %}
+      <figure class="card chart">
+        <figcaption>{{ title }}</figcaption>
+        <svg class="sparkline" data-series="{{ chart[key]|tojson|forceescape }}" data-colour="{{ colour }}" role="img" aria-label="{{ title }} over your last {{ chart.session_count }} sessions"></svg>
+      </figure>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="card empty">
+    <span class="empty-icon">📈</span>
+    <strong>Your progress charts will appear here</strong>
+    <p class="muted">Finish your first practice session to start tracking confidence, fluency and speaking speed over time.</p>
+  </div>
+{% endif %}
+
+<h2 class="section-title">Recent sessions</h2>
+{% if recent %}
+  <div class="card list">
+    {% for row in recent %}
+      <a class="list-row" href="{{ url_for('web.session_result', session_id=row.session_id) }}">
+        <span class="list-main"><strong>{{ row.word }}</strong><small>{{ row.completed_at.strftime('%d %b %Y, %H:%M') if row.completed_at else '' }} · {{ row.duration_text }}</small></span>
+        <span class="score-chip band-{{ row.band }}">{{ '%.0f'|format(row.overall_score) if row.overall_score is not none else '—' }}</span>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="muted">No sessions yet — your recent practice will show up here.</p>
+{% endif %}
+
+<h2 class="section-title">Achievements</h2>
+<div class="achievements">
+  {% for a in snapshot.achievements %}
+    <div class="achievement{% if not a.unlocked %} is-locked{% endif %}" title="{{ a.description }}">
+      <span>{{ a.icon }}</span><strong>{{ a.title }}</strong><small>{{ a.description }}</small>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='app.js') }}"></script>{% endblock %}

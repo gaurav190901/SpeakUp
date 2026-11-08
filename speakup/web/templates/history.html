@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}History{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>History</h1>
+  <p class="muted">Every session you've finished, newest first.</p>
+</header>
+{% if rows %}
+  <div class="card table-card">
+    <table class="table">
+      <thead><tr><th>Topic</th><th>Date</th><th>Length</th><th class="num">Overall</th><th class="num">Fluency</th><th class="num">Confidence</th><th></th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td><strong>{{ row.word }}</strong><br><small class="muted">{{ row.category_display }}</small></td>
+          <td>{{ row.completed_at.strftime('%d %b %Y') if row.completed_at else '—' }}</td>
+          <td>{{ row.duration_text }}</td>
+          <td class="num"><span class="score-chip band-{{ row.band }}">{{ '%.0f'|format(row.overall_score) if row.overall_score is not none else '—' }}</span></td>
+          <td class="num">{{ '%.0f'|format(row.fluency_score) if row.fluency_score is not none else '—' }}</td>
+          <td class="num">{{ '%.0f'|format(row.confidence_score) if row.confidence_score is not none else '—' }}</td>
+          <td class="num"><a class="btn btn-ghost btn-sm" href="{{ url_for('web.session_result', session_id=row.session_id) }}">View</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="card empty">
+    <span class="empty-icon">📋</span>
+    <strong>No speaking sessions yet</strong>
+    <p class="muted">Your finished sessions will be listed here.</p>
+    <a class="btn btn-primary" href="{{ url_for('web.practice') }}">🎤 Start practising</a>
+  </div>
+{% endif %}
+{% endblock %}

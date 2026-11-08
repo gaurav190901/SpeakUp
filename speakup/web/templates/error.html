@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block body_class %}landing{% endblock %}
+{% block body %}
+<div class="error-page card">
+  <span class="empty-icon">{{ '🧭' if code == 404 else '⚠️' }}</span>
+  <h1>{{ title }}</h1>
+  <p class="muted">{{ message if message and code != 404 else "We couldn't find that page." }}</p>
+  <a class="btn btn-primary" href="{{ url_for('web.landing') }}">Go to SpeakUp</a>
+</div>
+{% endblock %}

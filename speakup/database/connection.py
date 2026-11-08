@@ -11,8 +11,12 @@ Provides:
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
-from typing import Generator
+import os
+import sqlite3
+import tempfile
+from contextlib import closing, contextmanager
+from pathlib import Path
+from typing import Generator, Iterable
 
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
@@ -22,6 +26,71 @@ from speakup.config.settings import settings
 from speakup.database.models import Base
 
 logger = logging.getLogger(__name__)
+
+
+def migrate_legacy_database(
+    destination: Path, legacy_paths: Iterable[Path]
+) -> bool:
+    """Copy the best available legacy SQLite database without losing WAL data."""
+    if destination.exists():
+        return False
+
+    candidates: list[tuple[Path, bool]] = []
+    for path in dict.fromkeys(legacy_paths):
+        if path == destination or not path.is_file():
+            continue
+        try:
+            with closing(
+                sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
+            ) as source:
+                tables = {
+                    row[0]
+                    for row in source.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    )
+                }
+                if "users" not in tables:
+                    continue
+                has_credentials = (
+                    "user_credentials" in tables
+                    and source.execute(
+                        "SELECT EXISTS (SELECT 1 FROM user_credentials)"
+                    ).fetchone()[0]
+                )
+                integrity = source.execute("PRAGMA quick_check").fetchone()
+                if integrity is None or integrity[0] != "ok":
+                    continue
+            candidates.append((path, bool(has_credentials)))
+        except sqlite3.Error:
+            logger.warning("Skipping unreadable legacy database: %s", path, exc_info=True)
+
+    if not candidates:
+        return False
+
+    # Prefer a database with local sign-in accounts over an empty packaged copy.
+    source_path = next(
+        (path for path, has_credentials in candidates if has_credentials),
+        candidates[0][0],
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=destination.parent, prefix="speakup-", suffix=".db", delete=False
+    ) as temporary_file:
+        temporary_path = Path(temporary_file.name)
+
+    try:
+        with closing(
+            sqlite3.connect(f"{source_path.as_uri()}?mode=ro", uri=True)
+        ) as source:
+            with closing(sqlite3.connect(temporary_path)) as target:
+                source.backup(target)
+        os.replace(temporary_path, destination)
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+    logger.info("Migrated local database from %s to %s.", source_path, destination)
+    return True
 
 
 # ---------------------------------------------------------------------------

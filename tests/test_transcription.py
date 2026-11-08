@@ -1,5 +1,5 @@
 """
-tests/test_chunk4.py — pytest suite for Chunk 4 (Transcription System).
+tests/test_transcription.py — speech transcription providers and service.
 
 All tests use mocked transcription — no real faster-whisper model or
 audio files are required.  The suite runs offline and in CI environments.
@@ -52,8 +52,10 @@ from speakup.services.transcription_schemas import (  # noqa: E402
     TranscriptionStatus,
 )
 from speakup.services.transcription_providers import (  # noqa: E402
+    FallbackTranscriptionProvider,
     FasterWhisperProvider,
     MockTranscriptionProvider,
+    OpenAIWhisperProvider,
     TranscriptionError,
     get_provider,
 )
@@ -290,6 +292,105 @@ class TestFasterWhisperProviderGuards:
         assert "small" in p.backend_name
 
 
+class TestOpenAIWhisperProvider:
+
+    def test_raises_when_audio_missing(self):
+        provider = OpenAIWhisperProvider(client=MagicMock())
+        with pytest.raises(TranscriptionError, match="Audio file not found"):
+            provider.transcribe("/nonexistent/audio.wav")
+
+    def test_returns_empty_for_zero_byte_file(self):
+        provider = OpenAIWhisperProvider(client=MagicMock())
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio:
+            audio_path = Path(audio.name)
+        try:
+            result = provider.transcribe(audio_path)
+            assert not result.has_content
+            assert result.error is not None
+        finally:
+            audio_path.unlink(missing_ok=True)
+
+    def test_sends_audio_to_whisper_and_maps_segments(self):
+        response = MagicMock()
+        response.text = "Hello there."
+        response.language = "en"
+        response.duration = 2.5
+        response.segments = [
+            MagicMock(
+                id=0, start=0.1, end=2.4, text=" Hello there.",
+                avg_logprob=-0.1, no_speech_prob=0.02,
+            )
+        ]
+        client = MagicMock()
+        client.audio.transcriptions.create.return_value = response
+        provider = OpenAIWhisperProvider(client=client)
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio:
+            audio.write(b"audio")
+            audio_path = Path(audio.name)
+        try:
+            result = provider.transcribe(audio_path)
+            request = client.audio.transcriptions.create.call_args.kwargs
+            assert request["model"] == "whisper-1"
+            assert request["response_format"] == "verbose_json"
+            assert request["timestamp_granularities"] == ["segment"]
+            assert result.text == "Hello there."
+            assert result.language == "en"
+            assert result.duration == 2.5
+            assert result.segments[0].text == " Hello there."
+        finally:
+            audio_path.unlink(missing_ok=True)
+
+    def test_requires_api_key_without_injected_client(self, monkeypatch):
+        monkeypatch.setattr(settings.__class__, "OPENAI_API_KEY", "")
+        provider = OpenAIWhisperProvider()
+        with pytest.raises(TranscriptionError, match="requires an API key"):
+            provider._get_client()
+
+
+class TestFallbackTranscriptionProvider:
+
+    @pytest.fixture
+    def audio_path(self):
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio:
+            audio.write(b"audio")
+            path = Path(audio.name)
+        yield path
+        path.unlink(missing_ok=True)
+
+    def test_uses_primary_when_it_succeeds(self, audio_path):
+        primary, fallback = MagicMock(), MagicMock()
+        primary.transcribe.return_value = "primary-result"
+        p = FallbackTranscriptionProvider(primary, fallback)
+        assert p.transcribe(audio_path) == "primary-result"
+        fallback.transcribe.assert_not_called()
+
+    def test_uses_fallback_when_primary_fails(self, audio_path):
+        primary, fallback = MagicMock(), MagicMock()
+        primary.transcribe.side_effect = TranscriptionError("network down")
+        fallback.transcribe.return_value = "local-result"
+        p = FallbackTranscriptionProvider(primary, fallback)
+        assert p.transcribe(audio_path) == "local-result"
+        fallback.transcribe.assert_called_once_with(audio_path)
+
+    def test_reports_both_errors_when_both_fail(self, audio_path):
+        primary, fallback = MagicMock(), MagicMock()
+        primary.transcribe.side_effect = TranscriptionError("network down")
+        fallback.transcribe.side_effect = TranscriptionError("model missing")
+        p = FallbackTranscriptionProvider(primary, fallback)
+        with pytest.raises(TranscriptionError, match="network down") as exc:
+            p.transcribe(audio_path)
+        assert "model missing" in str(exc.value)
+
+    def test_missing_file_does_not_trigger_fallback(self):
+        primary, fallback = MagicMock(), MagicMock()
+        primary.transcribe.side_effect = TranscriptionError("Audio file not found")
+        p = FallbackTranscriptionProvider(primary, fallback)
+        with pytest.raises(TranscriptionError, match="not found"):
+            p.transcribe("/nonexistent/audio.wav")
+        fallback.transcribe.assert_not_called()
+
+
 # ===========================================================================
 # 7. get_provider() factory
 # ===========================================================================
@@ -304,12 +405,31 @@ class TestGetProvider:
         p = get_provider(backend="faster_whisper")
         assert isinstance(p, FasterWhisperProvider)
 
+    def test_openai_whisper_backend_without_fallback(self, monkeypatch):
+        monkeypatch.setattr(settings.__class__, "TRANSCRIPTION_LOCAL_FALLBACK", False)
+        p = get_provider(backend="openai_whisper")
+        assert isinstance(p, OpenAIWhisperProvider)
+
+    def test_openai_whisper_with_key_wraps_local_fallback(self, monkeypatch):
+        monkeypatch.setattr(settings.__class__, "TRANSCRIPTION_LOCAL_FALLBACK", True)
+        monkeypatch.setattr(settings.__class__, "OPENAI_API_KEY", "sk-test")
+        p = get_provider(backend="openai_whisper")
+        assert isinstance(p, FallbackTranscriptionProvider)
+        assert "OpenAI Whisper" in p.backend_name
+        assert "faster-whisper" in p.backend_name
+
+    def test_openai_whisper_without_key_uses_local(self, monkeypatch):
+        monkeypatch.setattr(settings.__class__, "TRANSCRIPTION_LOCAL_FALLBACK", True)
+        monkeypatch.setattr(settings.__class__, "OPENAI_API_KEY", "")
+        p = get_provider(backend="openai_whisper")
+        assert isinstance(p, FasterWhisperProvider)
+
     def test_invalid_backend_raises(self):
         with pytest.raises(ValueError, match="Unknown transcription backend"):
             get_provider(backend="invalid_backend")
 
     def test_default_uses_settings(self):
-        # settings.TRANSCRIPTION_BACKEND defaults to "faster_whisper"
+        # The configured backend is honored by the provider factory.
         original = settings.TRANSCRIPTION_BACKEND
         try:
             settings.__class__.TRANSCRIPTION_BACKEND = "mock"
@@ -574,7 +694,9 @@ class TestTranscriptionSettings:
         assert settings.WHISPER_BEAM_SIZE > 0
 
     def test_backend_is_valid(self):
-        assert settings.TRANSCRIPTION_BACKEND in ("faster_whisper", "mock")
+        assert settings.TRANSCRIPTION_BACKEND in (
+            "openai_whisper", "faster_whisper", "mock"
+        )
 
     def test_language_is_string(self):
         assert isinstance(settings.WHISPER_LANGUAGE, str)
@@ -782,7 +904,7 @@ class TestTranscriptionResultPage:
 # 16. MainWindow — constants and stack
 # ===========================================================================
 
-class TestMainWindowChunk4:
+class TestMainWindowTranscription:
 
     def test_page_transcription_constant(self):
         from speakup.ui.main_window import PAGE_TRANSCRIPTION
@@ -810,3 +932,55 @@ class TestMainWindowChunk4:
         win = MainWindow(user_name="Test")
         assert hasattr(win, "_on_transcription_skipped")
         assert callable(win._on_transcription_skipped)
+
+
+# ===========================================================================
+# Audio decoding (independent of faster-whisper's PyAV-version-specific loader)
+# ===========================================================================
+
+class TestAudioDecode:
+
+    @staticmethod
+    def _write_wav(path, seconds=1.0, rate=44_100, channels=2):
+        import math
+        import struct
+        import wave
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(channels)
+            w.setsampwidth(2)
+            w.setframerate(rate)
+            frame = lambda i: struct.pack("<h", int(8000 * math.sin(i / 10))) * channels  # noqa: E731
+            w.writeframes(b"".join(frame(i) for i in range(int(seconds * rate))))
+
+    def test_decodes_and_resamples_to_16k_mono(self, tmp_path):
+        from speakup.services.audio_decode import decode_audio
+        wav = tmp_path / "stereo.wav"
+        self._write_wav(wav, seconds=1.0)
+        samples = decode_audio(wav)
+        assert samples.dtype.name == "float32"
+        assert abs(len(samples) - 16_000) <= 200
+        assert 0 < float(abs(samples).max()) <= 1.0
+
+    def test_garbage_raises_value_error(self, tmp_path):
+        from speakup.services.audio_decode import decode_audio
+        bad = tmp_path / "bad.webm"
+        bad.write_bytes(b"definitely not audio")
+        with pytest.raises(ValueError):
+            decode_audio(bad)
+
+    def test_faster_whisper_receives_decoded_samples(self, tmp_path):
+        """The provider must not hand faster-whisper a path (its decoder breaks on PyAV 16+)."""
+        from unittest.mock import MagicMock
+        import numpy as np
+        from speakup.services.transcription_providers import FasterWhisperProvider
+
+        wav = tmp_path / "speech.wav"
+        self._write_wav(wav, seconds=0.5, rate=16_000, channels=1)
+        model = MagicMock()
+        info = MagicMock(language="en", language_probability=0.99, duration=0.5)
+        model.transcribe.return_value = (iter([]), info)
+        provider = FasterWhisperProvider()
+        provider._load_model = lambda: model
+        provider.transcribe(wav)
+        audio_arg = model.transcribe.call_args.args[0]
+        assert isinstance(audio_arg, np.ndarray)

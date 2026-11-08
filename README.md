@@ -1,7 +1,7 @@
 # SpeakUp
 
-**SpeakUp** is a desktop application for English speaking practice and confidence improvement.
-Record yourself speaking about a topic, get an AI transcript, and receive detailed feedback on your fluency, vocabulary, grammar, and confidence — all running locally on your machine.
+**SpeakUp** is an English speaking-practice app that runs in your browser on your own computer (a desktop version is also included).
+Record yourself speaking about a topic, get an accurate transcript using OpenAI Whisper, and receive detailed feedback on your fluency, vocabulary, grammar, and confidence. Recordings, transcripts, and practice history are stored on your machine. When OpenAI transcription is enabled (an `OPENAI_API_KEY` is set), each session's audio is sent to OpenAI for transcription; without a key, everything runs locally.
 
 ---
 
@@ -9,9 +9,11 @@ Record yourself speaking about a topic, get an AI transcript, and receive detail
 
 | Feature | Status |
 |---|---|
-| Random topic assignment (140 topics, 14 categories) | ✅ |
+| Web app in your browser, running locally (`python webapp.py`) | ✅ |
+| Random topic assignment (140 topics, 14 categories) with talking-point hints | ✅ |
 | Local email/password accounts with separate progress | ✅ |
 | Camera + microphone recording | ✅ |
+| Speech transcription (OpenAI Whisper API) | ✅ |
 | Local speech transcription (faster-whisper) | ✅ |
 | Fluency, vocabulary, grammar, confidence scoring | ✅ |
 | AI-powered detailed feedback (optional, OpenAI) | ✅ |
@@ -22,7 +24,9 @@ Record yourself speaking about a topic, get an AI transcript, and receive detail
 | Data export (CSV / JSON) | ✅ |
 | Database backup | ✅ |
 | Keyboard shortcuts | ✅ |
-| Fully offline (no online account or cloud required) | ✅ |
+| Offline practice mode with local transcription | ✅ |
+| Automatic fallback to local transcription if OpenAI is unavailable | ✅ |
+| 10-minute recording cap with wrap-up warning (configurable) | ✅ |
 
 ---
 
@@ -48,11 +52,23 @@ python -m venv .venv
 pip install -r requirements-prod.txt
 ```
 
-### Run
+### Run the web app (recommended)
+
+```powershell
+python webapp.py
+```
+
+Or double-click **`Start SpeakUp.bat`**. SpeakUp opens at <http://127.0.0.1:5000> in your default browser. The server only listens on this computer (`127.0.0.1`), so other devices on your network can't reach it. Allow microphone access when the browser asks. Press **Ctrl+C** in the console window to stop it.
+
+Options: `--port 8080` to use another port, `--no-browser` to skip opening a tab.
+
+### Run the desktop app
 
 ```powershell
 python app.py
 ```
+
+Both versions share the same database, accounts and history.
 
 On first launch, SpeakUp will:
 1. Create a local SQLite database (`speakup.db`)
@@ -71,20 +87,30 @@ Accounts are stored on this device and work offline; they do not sync across dev
 Copy `.env.example` to `.env` and adjust as needed:
 
 ```
-# Optional: enable AI feedback via OpenAI
-# NEVER commit your API key — keep it in .env only
+# Required for the default OpenAI Whisper transcription backend.
+# Keep your API key in .env only; never commit it.
 # OPENAI_API_KEY=sk-...
-# AI_FEEDBACK_BACKEND=llm
+# TRANSCRIPTION_BACKEND=openai_whisper
+# OPENAI_WHISPER_MODEL=whisper-1
 
-# Transcription model size (tiny/base/small/medium/large-v2)
-# Larger = more accurate, slower on CPU
+# Optional local/offline transcription instead
+# TRANSCRIPTION_BACKEND=faster_whisper
 # WHISPER_MODEL_SIZE=base
+
+# Fall back to local transcription when no key is set or the API fails
+# TRANSCRIPTION_LOCAL_FALLBACK=1
+
+# Recordings stop automatically after this many seconds (0 = no cap)
+# MAX_SPEAKING_DURATION=600
+
+# Optional AI feedback via OpenAI
+# AI_FEEDBACK_BACKEND=llm
 
 # Test mode — skips camera/mic/model downloads
 # SPEAKUP_TEST_MODE=1
 ```
 
-All settings have safe defaults. The application runs fully offline without any `.env` file.
+OpenAI Whisper is the default transcription provider. It needs an API key and an internet connection, and it uploads each session's audio to OpenAI. If no key is set, SpeakUp uses local transcription (faster-whisper) instead; if the API call fails (network loss, outage, file over 25 MB), the session is retried locally. Set `TRANSCRIPTION_LOCAL_FALLBACK=0` to disable this. To keep all audio on the device, set `TRANSCRIPTION_BACKEND=faster_whisper`. The local model is downloaded from Hugging Face on first use (about 150 MB for `base`) unless `WHISPER_MODEL_PATH` points to a local copy.
 
 ---
 
@@ -114,12 +140,16 @@ speakup/
 ├── services/
 │   ├── word_service.py       Topic assignment, no-repeat logic
 │   ├── recording_service.py  Camera + microphone capture
-│   ├── transcription_service.py  faster-whisper integration
+│   ├── transcription_service.py  OpenAI Whisper + local provider integration
 │   ├── analysis_service.py   Speech scoring pipeline
 │   ├── feedback_service.py   Local + LLM feedback providers
 │   ├── progress_service.py   Dashboard data aggregation
 │   └── gamification_service.py  Achievements, streaks, goals
-└── ui/
+├── web/                      Browser app (Flask)
+│   ├── views.py              Pages and JSON endpoints
+│   ├── processing.py         Background transcription + analysis of uploads
+│   ├── templates/, static/   HTML, CSS and JavaScript (no external CDNs)
+└── ui/                       Desktop app (PySide6)
     ├── main_window.py        Application shell + navigation
     └── pages/                One file per screen
 ```
@@ -156,9 +186,9 @@ Requires PyInstaller: `pip install pyinstaller`
 
 ## Data & Privacy
 
-- **Everything runs locally.** No data is sent to any server unless you configure `OPENAI_API_KEY` for optional AI feedback.
+- **Runs locally by default.** Nothing leaves your machine unless you set `OPENAI_API_KEY`; then session audio is sent to OpenAI for transcription, and transcripts may be sent for optional AI feedback.
 - Local accounts separate practice data but do not provide cloud sync or password recovery. Anyone with access to the database file can potentially access local data.
-- The database is at `speakup.db` in the project root.
+- Data location: when running from source, `speakup.db`, `recordings/` and `speakup.log` live in the project root; the packaged app stores them in `%LOCALAPPDATA%\SpeakUp`.
 - Recordings are saved to `recordings/YYYY/MM/session_<id>.mp4`.
 - Use **Settings → Data & Privacy** to export, back up the shared local database, delete the selected profile's recordings, or clear that profile's practice data.
 
@@ -166,13 +196,13 @@ Requires PyInstaller: `pip install pyinstaller`
 
 ## Offline Operation
 
-SpeakUp is designed to work completely offline:
+SpeakUp can work completely offline once the local transcription model is available:
 
 | Component | Offline? | Notes |
 |---|---|---|
 | Topic assignment | ✅ | Built-in JSON dataset |
 | Recording | ✅ | Local camera/mic only |
-| Transcription | ✅ | faster-whisper runs on CPU |
+| Transcription | ⚠️ | OpenAI Whisper requires internet and an API key and uploads audio; faster-whisper runs locally and is used automatically as a fallback |
 | Speech analysis | ✅ | Pure Python, no external calls |
 | Local feedback | ✅ | Rule-based, no API |
 | AI feedback | ⚠️ Optional | Requires `OPENAI_API_KEY` |
@@ -181,20 +211,23 @@ SpeakUp is designed to work completely offline:
 
 ---
 
-## Chunks Implemented
+## Tests
 
-| Chunk | Feature Area |
+The suite runs fully offline (no camera, microphone, network or model downloads) and runs automatically on GitHub for every push and pull request.
+
+| File | Covers |
 |---|---|
-| 1 | Foundation, DB schema, navigation shell |
-| 2 | Word/topic system, session state machine |
-| 3 | Camera + microphone recording |
-| 4 | Speech transcription (faster-whisper) |
-| 5 | Speech analysis engine |
-| 6 | Session results page |
-| 7 | Progress dashboard with charts |
-| 8 | AI feedback engine (local + optional LLM) |
-| 9 | Gamification (streaks, achievements, goals) |
-| 10 | Production hardening |
+| `test_database.py` | Models, connection, repositories |
+| `test_topics_and_sessions.py` | Topics, word pool, session lifecycle |
+| `test_recording.py` | Camera and microphone recording |
+| `test_transcription.py` | Transcription providers and fallback |
+| `test_speech_analysis.py` | Fluency, vocabulary, grammar, confidence |
+| `test_session_results.py` | Session results page |
+| `test_dashboard.py` | Progress dashboard |
+| `test_ai_feedback.py` | Local and LLM feedback |
+| `test_gamification.py` | Streaks, achievements, goals |
+| `test_production_readiness.py` | History, main window, settings |
+| `test_web.py` | Web app: accounts, CSRF, pages, recording pipeline, per-user access |
 
 ---
 

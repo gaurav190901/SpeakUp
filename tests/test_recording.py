@@ -1,5 +1,5 @@
 """
-tests/test_chunk3.py — pytest suite for Chunk 3 (Recording System).
+tests/test_recording.py — camera and microphone recording system.
 
 Covers:
     1.  RecordingState constants and is_terminal()
@@ -311,6 +311,89 @@ class TestRecordingEngineControlRequests:
 
         assert engine._process_control_requests() is True
         assert engine.state == RecordingState.ABANDONED
+
+
+class TestTimerMaximumDuration:
+
+    @pytest.fixture
+    def timer(self):
+        from speakup.ui.widgets.recording_timer import RecordingTimerWidget
+        return RecordingTimerWidget(min_duration=60, max_duration=600)
+
+    def test_label_shows_maximum(self, timer):
+        assert "10:00 max" in timer._min_label.text()
+
+    def test_no_maximum_label_when_cap_disabled(self):
+        from speakup.ui.widgets.recording_timer import RecordingTimerWidget
+        t = RecordingTimerWidget(min_duration=60, max_duration=0)
+        assert "max" not in t._min_label.text()
+
+    def test_no_warning_well_before_cap(self, timer):
+        timer.start()
+        timer.update_elapsed(300)
+        assert "Minimum reached" in timer._status_label.text()
+
+    def test_warns_before_automatic_stop(self, timer):
+        timer.start()
+        timer.update_elapsed(580)
+        assert "stops automatically in 20s" in timer._status_label.text()
+
+
+class TestMaximumDurationCap:
+
+    @pytest.fixture
+    def engine(self):
+        return RecordingEngine(session_id=1, output_path=Path("recording.mp4"))
+
+    def _run_recording_loop(self, engine, seconds_elapsed):
+        import time
+        import numpy as np
+
+        engine._state = RecordingState.RECORDING
+        engine._video_writer = None
+        engine._recording_start = time.perf_counter() - seconds_elapsed
+        engine._cap = MagicMock()
+        engine._cap.read.return_value = (True, np.zeros((4, 4, 3), dtype=np.uint8))
+
+        reads = {"n": 0}
+
+        def _read():
+            reads["n"] += 1
+            if reads["n"] > 3:  # stop the loop if the cap did not trigger
+                engine._stop_requested.set()
+            return True, np.zeros((4, 4, 3), dtype=np.uint8)
+
+        engine._cap.read.side_effect = _read
+        with patch.object(
+            engine, "_finish_capture", side_effect=engine._stop_requested.set
+        ) as finish_capture:
+            engine._preview_loop()
+        return finish_capture
+
+    def test_recording_stops_automatically_at_cap(self, engine, monkeypatch):
+        monkeypatch.setattr(settings, "MAX_SPEAKING_DURATION", 600)
+        finish_capture = self._run_recording_loop(engine, seconds_elapsed=601)
+        finish_capture.assert_called_once_with()
+
+    def test_recording_continues_below_cap(self, engine, monkeypatch):
+        monkeypatch.setattr(settings, "MAX_SPEAKING_DURATION", 600)
+        finish_capture = self._run_recording_loop(engine, seconds_elapsed=30)
+        finish_capture.assert_not_called()
+
+    def test_zero_disables_cap(self, engine, monkeypatch):
+        monkeypatch.setattr(settings, "MAX_SPEAKING_DURATION", 0)
+        finish_capture = self._run_recording_loop(engine, seconds_elapsed=10_000)
+        finish_capture.assert_not_called()
+
+    def test_default_cap_fits_openai_upload_limit(self):
+        from speakup.services.transcription_providers import OpenAIWhisperProvider
+
+        bytes_per_second = (
+            RecordingEngine._AUDIO_SR * RecordingEngine._AUDIO_CHANNELS * 2  # int16
+        )
+        wav_bytes = 44 + bytes_per_second * settings.MAX_SPEAKING_DURATION
+        assert settings.MAX_SPEAKING_DURATION > settings.MIN_SPEAKING_DURATION
+        assert wav_bytes < OpenAIWhisperProvider._MAX_AUDIO_BYTES
 
 
 # ===========================================================================

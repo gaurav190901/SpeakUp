@@ -1,5 +1,5 @@
 """
-tests/test_chunk9.py — pytest suite for Chunk 9 (Gamification & Progression).
+tests/test_gamification.py — streaks, achievements and daily goals.
 
 All DB tests use the shared engine/db_session fixtures from conftest.py.
 No external APIs, no hardware, no model downloads required.

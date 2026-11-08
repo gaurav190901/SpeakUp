@@ -4,16 +4,29 @@ All configuration is centralised here — import Settings wherever needed.
 """
 
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 # Resolve project root (two levels up from this file: config/ -> speakup/ -> project root)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+IS_FROZEN = getattr(sys, "frozen", False)
+APP_DATA_DIR = (
+    Path(os.getenv("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "SpeakUp"
+    if IS_FROZEN
+    else PROJECT_ROOT
+)
+_DATABASE_URL_OVERRIDE = os.getenv("DATABASE_URL")
 
-# Load .env if present (silently ignored when missing)
-_env_path = PROJECT_ROOT / ".env"
-load_dotenv(dotenv_path=_env_path, override=False)
+# Load .env if present (silently ignored when missing). The packaged desktop
+# app has no project root .env, so it reads one from the per-user data folder
+# (%LOCALAPPDATA%\SpeakUp\.env) or from beside SpeakUp.exe.
+_env_paths = [PROJECT_ROOT / ".env"]
+if IS_FROZEN:
+    _env_paths = [APP_DATA_DIR / ".env", Path(sys.executable).resolve().parent / ".env"]
+for _env_path in _env_paths:
+    load_dotenv(dotenv_path=_env_path, override=False)
 
 
 class Settings:
@@ -24,30 +37,42 @@ class Settings:
     # ------------------------------------------------------------------ #
     APP_NAME: str = os.getenv("APP_NAME", "SpeakUp")
     APP_VERSION: str = os.getenv("APP_VERSION", "0.1.0")
-    APP_ENV: str = os.getenv("APP_ENV", "development")
+    # The packaged app defaults to production (no SQL query logging).
+    APP_ENV: str = os.getenv("APP_ENV", "production" if IS_FROZEN else "development")
 
     # ------------------------------------------------------------------ #
     #  Paths                                                                #
     # ------------------------------------------------------------------ #
     PROJECT_ROOT: Path = PROJECT_ROOT
+    IS_FROZEN: bool = IS_FROZEN
+    APP_DATA_DIR: Path = APP_DATA_DIR
     DATA_DIR: Path = PROJECT_ROOT / "speakup" / "data"
-    RECORDINGS_DIR: Path = PROJECT_ROOT / os.getenv("RECORDINGS_DIR", "recordings")
+    RECORDINGS_DIR: Path = APP_DATA_DIR / os.getenv("RECORDINGS_DIR", "recordings")
     ASSETS_DIR: Path = PROJECT_ROOT / "speakup" / "assets"
     WORDS_DIR: Path = PROJECT_ROOT / "speakup" / "data" / "words"
+    DATABASE_PATH: Path | None = (
+        None if _DATABASE_URL_OVERRIDE else APP_DATA_DIR / "speakup.db"
+    )
 
     # ------------------------------------------------------------------ #
     #  Database                                                             #
     # ------------------------------------------------------------------ #
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        f"sqlite:///{PROJECT_ROOT / 'speakup.db'}",
+    DATABASE_URL: str = _DATABASE_URL_OVERRIDE or f"sqlite:///{APP_DATA_DIR / 'speakup.db'}"
+    LEGACY_DATABASE_PATHS: tuple[Path, ...] = (
+        (
+            Path(sys.executable).resolve().parent / "speakup.db",
+            PROJECT_ROOT / "speakup.db",
+            Path(sys.executable).resolve().parent.parent.parent / "speakup.db",
+        )
+        if IS_FROZEN
+        else ()
     )
 
     # ------------------------------------------------------------------ #
     #  Logging                                                              #
     # ------------------------------------------------------------------ #
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    LOG_FILE: str = os.getenv("LOG_FILE", str(PROJECT_ROOT / "speakup.log"))
+    LOG_FILE: str = os.getenv("LOG_FILE", str(APP_DATA_DIR / "speakup.log"))
 
     # ------------------------------------------------------------------ #
     #  Default User                                                         #
@@ -58,13 +83,25 @@ class Settings:
     #  Practice Thresholds                                                  #
     # ------------------------------------------------------------------ #
     MIN_SPEAKING_DURATION: int = int(os.getenv("MIN_SPEAKING_DURATION", "60"))
+    # Recordings stop automatically at this length (seconds; 0 disables the cap).
+    # 600 s of 16 kHz mono audio is ~19 MB, safely under OpenAI Whisper's 25 MB limit.
+    MAX_SPEAKING_DURATION: int = int(os.getenv("MAX_SPEAKING_DURATION", "600"))
     TARGET_WORDS_PER_MINUTE: int = int(os.getenv("TARGET_WORDS_PER_MINUTE", "130"))
 
     # ------------------------------------------------------------------ #
     #  Transcription                                                        #
     # ------------------------------------------------------------------ #
-    # Backend: "faster_whisper" (default, local CPU) | "mock" (tests only)
-    TRANSCRIPTION_BACKEND: str = os.getenv("TRANSCRIPTION_BACKEND", "faster_whisper")
+    # Backend: "openai_whisper" (Whisper API) | "faster_whisper" (local) | "mock" (tests)
+    TRANSCRIPTION_BACKEND: str = os.getenv("TRANSCRIPTION_BACKEND", "openai_whisper")
+
+    # OpenAI Whisper API model
+    OPENAI_WHISPER_MODEL: str = os.getenv("OPENAI_WHISPER_MODEL", "whisper-1")
+
+    # When the OpenAI backend is selected, use local faster-whisper if no API
+    # key is set or the API call fails, instead of losing the session.
+    TRANSCRIPTION_LOCAL_FALLBACK: bool = os.getenv(
+        "TRANSCRIPTION_LOCAL_FALLBACK", "1"
+    ).strip().lower() not in ("0", "false", "no", "off")
 
     # Whisper model size — tradeoff: accuracy vs speed on CPU
     # Options: "tiny", "base", "small", "medium", "large-v2", "large-v3"
@@ -231,7 +268,10 @@ class Settings:
     @classmethod
     def ensure_directories(cls) -> None:
         """Create required runtime directories if they don't already exist."""
-        for directory in (cls.RECORDINGS_DIR, cls.DATA_DIR, cls.WORDS_DIR):
+        directories = [cls.APP_DATA_DIR, cls.RECORDINGS_DIR]
+        if not cls.IS_FROZEN:
+            directories.extend((cls.DATA_DIR, cls.WORDS_DIR))
+        for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)
 
     @classmethod

@@ -42,8 +42,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QSplashScreen  # noqa: E402
 from PySide6.QtCore import QRect, Qt                       # noqa: E402
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap  # noqa: E402
 
-from speakup.database.connection import init_db                # noqa: E402
-from speakup.services.word_service import WordService          # noqa: E402
+from speakup.database.bootstrap import bootstrap_database      # noqa: E402
 from speakup.ui.main_window import MainWindow                  # noqa: E402
 from speakup.ui.widgets.onboarding import maybe_show_onboarding  # noqa: E402
 from speakup.ui.widgets.auth_dialog import AuthDialog          # noqa: E402
@@ -54,30 +53,9 @@ from speakup.ui.widgets.auth_dialog import AuthDialog          # noqa: E402
 # ---------------------------------------------------------------------------
 
 def _bootstrap_database() -> None:
-    """Initialise the database and seed default words if needed.
+    """Initialise the database and seed default words if needed."""
+    bootstrap_database()
 
-    1. Create all tables (idempotent — safe to call on every launch).
-    2. Preserve existing local profiles.
-    3. Seed default words if the word pool is empty.
-    """
-    logger.info("Bootstrapping database…")
-    settings.ensure_directories()
-
-    try:
-        init_db(seed_default_user=False)
-        logger.info("Database initialised successfully.")
-    except Exception as exc:
-        logger.critical("Database initialisation failed: %s", exc, exc_info=True)
-        raise
-
-    # Seed words if the word pool is empty
-    try:
-        word_service = WordService()
-        seeded = word_service.seed_words_if_empty()
-        if seeded:
-            logger.info("Word pool seeded with %d words.", seeded)
-    except Exception as exc:
-        logger.warning("Word seeding failed (non-fatal): %s", exc)
 
 def _install_exception_handler(app: QApplication) -> None:
     """

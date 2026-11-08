@@ -59,7 +59,7 @@ class AnalysisService:
         Same pipeline but accepts a TranscriptResult object for richer
         segment-level metrics (pauses, logprob).
 
-    Read-only helpers (already implemented since Chunk 1)
+    Read-only helpers
     ─────────────────────────────────────────────────────
     get_result_for_session(session_id)
     get_average_scores_for_user(user_id)
@@ -239,7 +239,7 @@ class AnalysisService:
         return bundle.to_text()
 
     # ------------------------------------------------------------------ #
-    # Read operations (unchanged since Chunk 1)                           #
+    # Read operations                                                     #
     # ------------------------------------------------------------------ #
 
     def get_result_for_session(self, session_id: int) -> dict | None:

@@ -21,11 +21,21 @@ ENV/
 # ── Environment / secrets ────────────────────────────────────────────────
 # NEVER commit real secrets — keep them in .env only
 .env
+.env.*
+!.env.example
+*.pem
+*.key
 
-# ── SpeakUp runtime data ─────────────────────────────────────────────────
-speakup.db
+# ── SpeakUp runtime data (personal: accounts, transcripts, voice) ───────
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
 speakup.log
 recordings/
+backups/
 *.mp4
 *.wav
 .speakup_onboarded

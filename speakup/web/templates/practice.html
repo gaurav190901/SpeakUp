@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Practice{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Today's practice</h1>
+  <p class="muted">Build your English speaking confidence, one topic at a time.</p>
+</header>
+
+<form class="filters" method="post" action="{{ url_for('web.new_topic') }}" data-recording-hide>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label class="sr-only" for="category">Category</label>
+  <select id="category" name="category">
+    <option value="">🗂️ All categories</option>
+    {% for value, label in categories %}<option value="{{ value }}"{% if value == selected_category %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <label class="sr-only" for="level">Level</label>
+  <select id="level" name="level">
+    <option value="">All levels</option>
+    {% for value, label in levels %}<option value="{{ value }}"{% if value == selected_level %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button class="btn btn-outline" type="submit">🔀 New topic</button>
+  {% if remaining is not none %}<span class="muted small">{{ remaining }} topics left</span>{% endif %}
+</form>
+
+{% if topic.exhausted %}
+  <div class="card empty">
+    <span class="empty-icon">🏆</span>
+    <strong>You've done every topic here!</strong>
+    <p class="muted">{{ exhausted_message }} Try a different category or level.</p>
+  </div>
+{% else %}
+<section class="card topic" id="practice"
+  data-session-id="{{ topic.session_id }}"
+  data-min-seconds="{{ min_seconds }}"
+  data-max-seconds="{{ max_seconds }}"
+  data-start-url="{{ url_for('web.api_start', session_id=topic.session_id) }}"
+  data-abandon-url="{{ url_for('web.api_abandon', session_id=topic.session_id) }}"
+  data-upload-url="{{ url_for('web.api_upload', session_id=topic.session_id) }}">
+
+  <small class="eyebrow">Your topic</small>
+  <div class="topic-title"><h2>{{ topic.word }}</h2></div>
+
+  <div class="topic-meta">
+    <div><small class="eyebrow">Category</small><strong>{{ category_display }}</strong></div>
+    <div><small class="eyebrow">Level</small><strong>{{ level_icon }} {{ topic.difficulty_display }}</strong><small class="muted">{{ level_hint }}</small></div>
+  </div>
+
+  {% if topic.description %}<p class="topic-question">{{ topic.description }}</p>{% endif %}
+
+  <div class="recorder-layout">
+    <div class="recorder-main">
+      {% if topic.hints %}
+      <div class="hints">
+        <strong>💡 Ideas to talk about</strong>
+        <ul>{% for hint in topic.hints %}<li>{{ hint }}</li>{% endfor %}</ul>
+      </div>
+      {% endif %}
+
+      <div class="info" data-state="idle">ℹ️ Talk for at least {{ min_label }}. There are no wrong answers — just keep going!</div>
+
+      <div class="recorder" hidden data-state="recording">
+        <div class="timer" aria-live="polite">
+          <span class="rec-dot" aria-hidden="true"></span>
+          <span class="timer-value" id="timer">0:00</span>
+          <span class="timer-note muted" id="timer-note"></span>
+        </div>
+        <div class="bar"><span id="progress" style="--w: 0%"></span></div>
+        <div class="level-meter" aria-hidden="true"><span id="level"></span></div>
+      </div>
+
+      <div class="alert" role="alert" id="rec-error" hidden></div>
+
+      <div class="actions">
+        <button class="btn btn-primary btn-lg" id="btn-start" type="button" data-state="idle">🎤 Start recording</button>
+        <button class="btn btn-primary btn-lg" id="btn-stop" type="button" hidden data-state="recording">⏹ Finish &amp; get feedback</button>
+        <button class="btn btn-ghost" id="btn-abandon" type="button" hidden data-state="recording">Cancel</button>
+      </div>
+    </div>
+    <div class="camera" hidden data-state="recording">
+      <video id="camera" autoplay muted playsinline></video>
+      <small class="muted">Camera preview — only you can see this. It isn't saved.</small>
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='app.js') }}"></script><script src="{{ url_for('static', filename='record.js') }}"></script>{% endblock %}

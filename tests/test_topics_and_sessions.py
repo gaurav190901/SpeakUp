@@ -1,5 +1,5 @@
 """
-tests/test_chunk2.py — pytest suite for Chunk 2.
+tests/test_topics_and_sessions.py — topic loading, word pool and practice session lifecycle.
 
 Covers:
     1.  Loader — topics.json loading and validation
@@ -847,3 +847,64 @@ class TestWordServiceHelpers:
     def test_pool_exhausted_message_not_empty(self):
         assert POOL_EXHAUSTED_MESSAGE
         assert "completed" in POOL_EXHAUSTED_MESSAGE.lower()
+
+
+# ===========================================================================
+# 15. Friendly topics — hints, icons, and syncing bundled wording
+# ===========================================================================
+
+class TestFriendlyTopics:
+
+    def test_every_topic_has_three_hints(self):
+        from speakup.data.words.loader import load_topics
+        for t in load_topics():
+            hints = t.get("hints")
+            assert isinstance(hints, list) and len(hints) == 3, t["word"]
+            assert all(isinstance(h, str) and h.strip() for h in hints)
+
+    def test_every_category_has_icon(self):
+        from speakup.data.words.loader import CATEGORIES, CATEGORY_ICONS
+        assert set(CATEGORIES) == set(CATEGORY_ICONS)
+
+    def test_category_with_icon(self):
+        from speakup.data.words.loader import category_with_icon
+        assert category_with_icon("Food").endswith("Food")
+        assert category_with_icon("Food") != "Food"
+        assert category_with_icon("Unknown") == "Unknown"
+        assert category_with_icon(None) == "—"
+
+    def test_get_topic_hints(self):
+        from speakup.data.words.loader import get_topic_hints
+        assert len(get_topic_hints("Morning Routines")) == 3
+        assert get_topic_hints("No Such Topic") == []
+        assert get_topic_hints(None) == []
+
+    def test_format_hints_html_escapes(self):
+        from speakup.data.words.loader import format_hints_html
+        out = format_hints_html(["A <b> & C"])
+        assert "Ideas to talk about" in out
+        assert "&lt;b&gt; &amp; C" in out
+        assert format_hints_html([]) == ""
+
+    def test_assign_topic_includes_hints(self, db_session):
+        user = make_user(db_session)
+        make_word(db_session, word="Morning Routines", category="Daily Life",
+                  difficulty="easy")
+        result = WordService().assign_topic(user.id)
+        assert len(result["hints"]) == 3
+
+    def test_sync_updates_old_wording_and_category(self, db_session):
+        from speakup.data.words.loader import load_topics
+        old = make_word(db_session, word="A Chair", category="Random Objects",
+                        difficulty="easy", description="Old text")
+        ws = WordService()
+        changed = ws.sync_bundled_topics()
+        assert changed == len(load_topics())  # 1 updated + 139 added
+
+        with get_session() as s:
+            w = WordRepository(s).get_by_word("A Chair")
+            assert w.id == old.id               # history keeps pointing at it
+            assert w.category == "Everyday Objects"
+            assert w.description != "Old text"
+
+        assert ws.sync_bundled_topics() == 0    # idempotent

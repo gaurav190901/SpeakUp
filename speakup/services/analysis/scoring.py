@@ -48,8 +48,8 @@ def compute_overall_score(
 
     Note on pronunciation_score:
         The ``pronunciation_score`` DB column is intentionally left None in
-        Chunk 5 — pronunciation analysis requires phoneme-level data not
-        available from Whisper alone.  It will be populated in Chunk 6+.
+        Pronunciation analysis requires phoneme-level data not
+        available from Whisper alone, so it is not scored yet.
     """
     if weights is None:
         weights = {

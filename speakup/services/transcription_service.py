@@ -105,7 +105,7 @@ class TranscriptionWorker(QObject):
                 )
 
             self.progress_message.emit(
-                f"Loading model ({settings.WHISPER_MODEL_SIZE})…"
+                f"Preparing {self._provider.backend_name}…"
             )
 
             result = self._provider.transcribe(self._audio_path)
@@ -249,7 +249,7 @@ class TranscriptionService:
         """
         Given an MP4 or WAV path, return the sibling WAV file path.
 
-        Recording format (from Chunk 3):
+        Recording format (from the recording service):
             recordings/YYYY/MM/session_<id>.mp4   ← video
             recordings/YYYY/MM/session_<id>.wav   ← audio (sibling)
         """
