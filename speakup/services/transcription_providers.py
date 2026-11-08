@@ -297,8 +297,16 @@ class FasterWhisperProvider(BaseTranscriptionProvider):
         )
 
         try:
+            from speakup.services.audio_decode import decode_audio  # noqa: PLC0415
+            audio = decode_audio(path)
+        except Exception as exc:
+            raise TranscriptionError(f"Could not read audio file {path.name}: {exc}") from exc
+
+        try:
+            # Pass decoded samples rather than the path: faster-whisper's own
+            # decoder is incompatible with newer PyAV releases.
             segments_iter, info = model.transcribe(
-                str(path),
+                audio,
                 language=self._language or None,
                 beam_size=self._beam_size,
                 word_timestamps=True,

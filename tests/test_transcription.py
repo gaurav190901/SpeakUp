@@ -932,3 +932,55 @@ class TestMainWindowTranscription:
         win = MainWindow(user_name="Test")
         assert hasattr(win, "_on_transcription_skipped")
         assert callable(win._on_transcription_skipped)
+
+
+# ===========================================================================
+# Audio decoding (independent of faster-whisper's PyAV-version-specific loader)
+# ===========================================================================
+
+class TestAudioDecode:
+
+    @staticmethod
+    def _write_wav(path, seconds=1.0, rate=44_100, channels=2):
+        import math
+        import struct
+        import wave
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(channels)
+            w.setsampwidth(2)
+            w.setframerate(rate)
+            frame = lambda i: struct.pack("<h", int(8000 * math.sin(i / 10))) * channels  # noqa: E731
+            w.writeframes(b"".join(frame(i) for i in range(int(seconds * rate))))
+
+    def test_decodes_and_resamples_to_16k_mono(self, tmp_path):
+        from speakup.services.audio_decode import decode_audio
+        wav = tmp_path / "stereo.wav"
+        self._write_wav(wav, seconds=1.0)
+        samples = decode_audio(wav)
+        assert samples.dtype.name == "float32"
+        assert abs(len(samples) - 16_000) <= 200
+        assert 0 < float(abs(samples).max()) <= 1.0
+
+    def test_garbage_raises_value_error(self, tmp_path):
+        from speakup.services.audio_decode import decode_audio
+        bad = tmp_path / "bad.webm"
+        bad.write_bytes(b"definitely not audio")
+        with pytest.raises(ValueError):
+            decode_audio(bad)
+
+    def test_faster_whisper_receives_decoded_samples(self, tmp_path):
+        """The provider must not hand faster-whisper a path (its decoder breaks on PyAV 16+)."""
+        from unittest.mock import MagicMock
+        import numpy as np
+        from speakup.services.transcription_providers import FasterWhisperProvider
+
+        wav = tmp_path / "speech.wav"
+        self._write_wav(wav, seconds=0.5, rate=16_000, channels=1)
+        model = MagicMock()
+        info = MagicMock(language="en", language_probability=0.99, duration=0.5)
+        model.transcribe.return_value = (iter([]), info)
+        provider = FasterWhisperProvider()
+        provider._load_model = lambda: model
+        provider.transcribe(wav)
+        audio_arg = model.transcribe.call_args.args[0]
+        assert isinstance(audio_arg, np.ndarray)
