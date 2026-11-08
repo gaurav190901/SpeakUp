@@ -578,6 +578,38 @@ class TestLocalProfiles:
         assert dialog.authenticated_account is not None
         assert dialog.authenticated_account[1] == "Practice User"
 
+    def test_welcome_screen_switches_between_sign_in_and_sign_up(self, engine):
+        from speakup.ui.widgets.auth_dialog import AuthDialog
+
+        dialog = AuthDialog()
+        assert dialog._pages.currentIndex() == 0
+        dialog._show_mode(1)
+        assert dialog._pages.currentIndex() == 1
+        assert dialog._mode_group.checkedId() == 1
+
+    def test_sign_in_shows_friendly_errors(self, engine):
+        from speakup.ui.widgets.auth_dialog import AuthDialog
+
+        dialog = AuthDialog()
+        dialog._sign_in()
+        assert not dialog._login_error.isHidden()
+        assert "email and password" in dialog._login_error.text()
+
+        dialog._login_email.setText("nobody@example.com")
+        dialog._login_password.setText("WrongPassword1")
+        dialog._sign_in()
+        assert "don't match" in dialog._login_error.text()
+        assert dialog.authenticated_account is None
+
+    def test_signup_password_mismatch_message(self, engine):
+        from speakup.ui.widgets.auth_dialog import AuthDialog
+
+        dialog = AuthDialog()
+        dialog._signup_password.setText("GoodPassword123")
+        dialog._signup_confirmation.setText("OtherPassword123")
+        dialog._sign_up()
+        assert "don't match" in dialog._signup_error.text()
+
     def test_selected_profile_id_is_used_by_profile_scoped_pages(self, engine):
         from speakup.database.connection import get_session
         from speakup.database.repository import UserRepository
