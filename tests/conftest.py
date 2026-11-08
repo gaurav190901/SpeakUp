@@ -31,12 +31,19 @@ from speakup.database.repository import (  # noqa: E402
 # Core DB fixtures (shared across all test files)
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="function")
-def engine():
+@pytest.fixture(scope="function", autouse=True)
+def engine(tmp_path, monkeypatch):
     """
     Fresh in-memory SQLite database for each test function.
     Tears down the engine singletons after each test.
+
+    Autouse so no test can ever read or write the developer's real
+    database or recordings, and so results don't depend on whether a
+    local speakup.db happens to exist (CI starts without one).
     """
+    from speakup.config.settings import settings  # noqa: PLC0415
+
+    monkeypatch.setattr(settings, "RECORDINGS_DIR", tmp_path / "recordings")
     reset_engine()
     eng = init_db("sqlite:///:memory:")
     yield eng
