@@ -6,11 +6,12 @@ Provider abstraction layer for speech-to-text backends.
 Design
 ------
 BaseTranscriptionProvider
+    └── OpenAIWhisperProvider   — hosted OpenAI Whisper API
     └── FasterWhisperProvider   — local inference via faster-whisper
+    └── FallbackTranscriptionProvider — primary provider, local on failure
     └── MockTranscriptionProvider — deterministic stub for tests / dev
 
-Any future provider (e.g., OpenAI Whisper API, AssemblyAI, Azure) can be
-added here by subclassing BaseTranscriptionProvider without touching the
+Any future provider (e.g., AssemblyAI, Azure) can be added here by subclassing BaseTranscriptionProvider without touching the
 UI or TranscriptionService.
 
 Usage
@@ -25,7 +26,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
+from typing import BinaryIO, Optional, Protocol
 
 from speakup.config.settings import settings
 from speakup.services.transcription_schemas import (
@@ -75,6 +76,128 @@ class BaseTranscriptionProvider(ABC):
 
 class TranscriptionError(RuntimeError):
     """Raised by a provider when transcription cannot proceed."""
+
+
+# ---------------------------------------------------------------------------
+# OpenAIWhisperProvider
+# ---------------------------------------------------------------------------
+
+class _TranscriptionEndpoint(Protocol):
+    def create(
+        self,
+        *,
+        model: str,
+        file: BinaryIO,
+        response_format: str,
+        timestamp_granularities: list[str],
+        language: str | None = None,
+    ) -> object: ...
+
+
+class _AudioEndpoint(Protocol):
+    transcriptions: _TranscriptionEndpoint
+
+
+class _OpenAIClient(Protocol):
+    audio: _AudioEndpoint
+
+
+class OpenAIWhisperProvider(BaseTranscriptionProvider):
+    """Transcription using OpenAI's hosted Whisper API."""
+
+    _MAX_AUDIO_BYTES = 25 * 1024 * 1024
+
+    def __init__(
+        self,
+        model: str | None = None,
+        language: str | None = None,
+        client: _OpenAIClient | None = None,
+    ) -> None:
+        self._model = model or settings.OPENAI_WHISPER_MODEL
+        self._language = language if language is not None else (
+            settings.WHISPER_LANGUAGE or None
+        )
+        self._client = client
+
+    @property
+    def backend_name(self) -> str:
+        return f"OpenAI Whisper ({self._model})"
+
+    def transcribe(self, audio_path: str | Path) -> TranscriptResult:
+        path = Path(audio_path)
+        if not path.exists():
+            raise TranscriptionError(f"Audio file not found: {path}")
+        if path.stat().st_size == 0:
+            return TranscriptResult.empty(
+                audio_path=str(path),
+                error="Audio file is empty — no speech to transcribe.",
+            )
+        if path.stat().st_size > self._MAX_AUDIO_BYTES:
+            raise TranscriptionError(
+                "Audio file exceeds the 25 MB limit for OpenAI Whisper. "
+                "Record a shorter session and try again."
+            )
+
+        client = self._get_client()
+        try:
+            with path.open("rb") as audio_file:
+                response = client.audio.transcriptions.create(
+                    model=self._model,
+                    file=audio_file,
+                    response_format="verbose_json",
+                    timestamp_granularities=["segment"],
+                    language=self._language,
+                )
+        except Exception as exc:
+            logger.exception("OpenAI Whisper transcription failed for %s", path.name)
+            raise TranscriptionError(f"OpenAI Whisper transcription failed: {exc}") from exc
+
+        text = str(getattr(response, "text", "") or "").strip()
+        raw_segments = getattr(response, "segments", None) or []
+        segments = [
+            TranscriptSegment(
+                id=int(getattr(segment, "id", index)),
+                start=float(getattr(segment, "start", 0.0) or 0.0),
+                end=float(getattr(segment, "end", 0.0) or 0.0),
+                text=str(getattr(segment, "text", "") or ""),
+                avg_logprob=float(getattr(segment, "avg_logprob", 0.0) or 0.0),
+                no_speech_prob=float(getattr(segment, "no_speech_prob", 0.0) or 0.0),
+            )
+            for index, segment in enumerate(raw_segments)
+        ]
+        return TranscriptResult(
+            text=text,
+            segments=segments,
+            language=str(
+                getattr(response, "language", None) or self._language or ""
+            ),
+            duration=float(getattr(response, "duration", 0.0) or 0.0),
+            model_size=self._model,
+            audio_path=str(path),
+        )
+
+    def _get_client(self) -> _OpenAIClient:
+        if self._client is not None:
+            return self._client
+        if not settings.has_openai_key():
+            raise TranscriptionError(
+                "OpenAI Whisper requires an API key. Set OPENAI_API_KEY in your "
+                ".env file, or set TRANSCRIPTION_BACKEND=faster_whisper to use "
+                "local transcription."
+            )
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise TranscriptionError(
+                "The OpenAI package is not installed. Install the project "
+                "requirements to use OpenAI Whisper."
+            ) from exc
+
+        try:
+            self._client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        except Exception as exc:
+            raise TranscriptionError(f"Could not initialize OpenAI client: {exc}") from exc
+        return self._client
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +424,50 @@ class MockTranscriptionProvider(BaseTranscriptionProvider):
 
 
 # ---------------------------------------------------------------------------
+# FallbackTranscriptionProvider
+# ---------------------------------------------------------------------------
+
+class FallbackTranscriptionProvider(BaseTranscriptionProvider):
+    """
+    Try *primary*; on :class:`TranscriptionError` retry with *fallback*.
+
+    Used so an OpenAI outage, network loss, or oversized file degrades to
+    local transcription instead of losing the user's session.
+    """
+
+    def __init__(
+        self,
+        primary: BaseTranscriptionProvider,
+        fallback: BaseTranscriptionProvider,
+    ) -> None:
+        self._primary = primary
+        self._fallback = fallback
+
+    @property
+    def backend_name(self) -> str:
+        return f"{self._primary.backend_name}, falls back to {self._fallback.backend_name}"
+
+    def transcribe(self, audio_path: str | Path) -> TranscriptResult:
+        try:
+            return self._primary.transcribe(audio_path)
+        except TranscriptionError as primary_error:
+            if not Path(audio_path).exists():
+                raise
+            logger.warning(
+                "%s failed (%s) — retrying with %s",
+                self._primary.backend_name, primary_error,
+                self._fallback.backend_name,
+            )
+            try:
+                return self._fallback.transcribe(audio_path)
+            except TranscriptionError as fallback_error:
+                raise TranscriptionError(
+                    f"{primary_error}\n\nLocal transcription also failed: "
+                    f"{fallback_error}"
+                ) from fallback_error
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
@@ -313,8 +480,13 @@ def get_provider(
 
     Args:
         backend: Override ``settings.TRANSCRIPTION_BACKEND``.
-                 ``'faster_whisper'`` | ``'mock'``.
-        **kwargs: Passed through to the provider constructor.
+                 ``'openai_whisper'`` | ``'faster_whisper'`` | ``'mock'``.
+        **kwargs: Passed through to the provider constructor (the primary
+                  provider when a local fallback is wrapped around it).
+
+    With ``openai_whisper`` and ``settings.TRANSCRIPTION_LOCAL_FALLBACK``
+    enabled (the default), a missing API key selects local transcription
+    directly, and API failures are retried locally.
 
     Returns:
         A ready-to-use :class:`BaseTranscriptionProvider`.
@@ -322,9 +494,20 @@ def get_provider(
     b = backend or settings.TRANSCRIPTION_BACKEND
     if b == "mock":
         return MockTranscriptionProvider(**kwargs)
+    if b == "openai_whisper":
+        if not settings.TRANSCRIPTION_LOCAL_FALLBACK:
+            return OpenAIWhisperProvider(**kwargs)
+        if not settings.has_openai_key() and "client" not in kwargs:
+            logger.info(
+                "No OPENAI_API_KEY configured — using local transcription."
+            )
+            return FasterWhisperProvider()
+        return FallbackTranscriptionProvider(
+            OpenAIWhisperProvider(**kwargs), FasterWhisperProvider()
+        )
     if b == "faster_whisper":
         return FasterWhisperProvider(**kwargs)
     raise ValueError(
         f"Unknown transcription backend {b!r}. "
-        "Valid options: 'faster_whisper', 'mock'."
+        "Valid options: 'openai_whisper', 'faster_whisper', 'mock'."
     )

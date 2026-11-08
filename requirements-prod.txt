@@ -16,7 +16,8 @@ opencv-python==5.0.0.93
 sounddevice==0.5.6
 numpy==2.4.3
 
-# ── Local Transcription (CPU-friendly) ──────────────────────────────────
+# ── Transcription ────────────────────────────────────────────────────────
+openai==3.19.2
 faster-whisper==1.2.1
 ctranslate2==4.8.2
 
@@ -27,4 +28,3 @@ matplotlib==3.10.8
 Pillow==12.1.1
 
 # ── AI Feedback (optional — app works without this) ─────────────────────
-# openai==3.19.2   # uncomment to enable LLM feedback

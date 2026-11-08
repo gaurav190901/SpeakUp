@@ -20,7 +20,11 @@ if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
 
 # Run PyInstaller
 Write-Host "Running PyInstaller..." -ForegroundColor Yellow
+# PyInstaller logs to stderr; under "Stop" Windows PowerShell 5.1 treats that
+# as a terminating error, so relax it for this call and rely on the exit code.
+$ErrorActionPreference = "Continue"
 python -m PyInstaller speakup.spec --clean --noconfirm
+$ErrorActionPreference = "Stop"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "PyInstaller failed with exit code $LASTEXITCODE"

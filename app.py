@@ -42,7 +42,10 @@ from PySide6.QtWidgets import QApplication, QDialog, QSplashScreen  # noqa: E402
 from PySide6.QtCore import QRect, Qt                       # noqa: E402
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap  # noqa: E402
 
-from speakup.database.connection import init_db                # noqa: E402
+from speakup.database.connection import (                       # noqa: E402
+    init_db,
+    migrate_legacy_database,
+)
 from speakup.services.word_service import WordService          # noqa: E402
 from speakup.ui.main_window import MainWindow                  # noqa: E402
 from speakup.ui.widgets.onboarding import maybe_show_onboarding  # noqa: E402
@@ -64,6 +67,10 @@ def _bootstrap_database() -> None:
     settings.ensure_directories()
 
     try:
+        if settings.IS_FROZEN and settings.DATABASE_PATH is not None:
+            migrate_legacy_database(
+                settings.DATABASE_PATH, settings.LEGACY_DATABASE_PATHS
+            )
         init_db(seed_default_user=False)
         logger.info("Database initialised successfully.")
     except Exception as exc:

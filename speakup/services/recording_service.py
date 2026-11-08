@@ -178,7 +178,9 @@ class RecordingEngine(QObject):
     _FPS           = 20
     _FRAME_W       = 640
     _FRAME_H       = 480
-    _AUDIO_SR      = 44100   # Hz
+    # 16 kHz mono int16 is Whisper's native input and keeps a 10-minute
+    # session (~19 MB) under the OpenAI Whisper API's 25 MB upload limit.
+    _AUDIO_SR      = 16000   # Hz
     _AUDIO_CHANNELS = 1
     _AUDIO_DTYPE   = "int16"
     _AUDIO_BLOCKSIZE = 2048
@@ -312,12 +314,26 @@ class RecordingEngine(QObject):
                 if elapsed != self._elapsed_seconds:
                     self._elapsed_seconds = elapsed
                     self.elapsed_changed.emit(elapsed)
+                if self._max_duration_reached(elapsed):
+                    logger.info(
+                        "RecordingEngine: maximum duration of %ds reached — "
+                        "stopping automatically",
+                        settings.MAX_SPEAKING_DURATION,
+                    )
+                    self._finish_capture()
+                    break
 
             # Pace the loop
             elapsed_loop = time.perf_counter() - t0
             sleep_time = max(0.0, frame_interval - elapsed_loop)
             if sleep_time > 0:
                 time.sleep(sleep_time)
+
+    @staticmethod
+    def _max_duration_reached(elapsed: float) -> bool:
+        """True once *elapsed* hits ``settings.MAX_SPEAKING_DURATION`` (0 = no cap)."""
+        limit = settings.MAX_SPEAKING_DURATION
+        return limit > 0 and elapsed >= limit
 
     def _process_control_requests(self) -> bool:
         """Process recording commands on the same thread that owns the capture."""

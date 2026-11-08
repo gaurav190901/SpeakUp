@@ -15,11 +15,18 @@ Fixtures are provided by tests/conftest.py (engine, db_session).
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 
-from speakup.database.connection import init_db, get_session, reset_engine
+from speakup.database.connection import (
+    get_session,
+    init_db,
+    migrate_legacy_database,
+    reset_engine,
+)
 from speakup.database.models import (
     AnalysisResult,
     PracticeSession,
@@ -52,6 +59,33 @@ _make_session = make_session
 # ===========================================================================
 
 class TestDatabaseInitialisation:
+
+    def test_migrate_legacy_database_prefers_existing_account_database(self, tmp_path):
+        empty_database = tmp_path / "empty" / "speakup.db"
+        account_database = tmp_path / "project" / "speakup.db"
+        destination = tmp_path / "user-data" / "speakup.db"
+        empty_database.parent.mkdir()
+        account_database.parent.mkdir()
+
+        with sqlite3.connect(empty_database) as connection:
+            connection.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
+        with sqlite3.connect(account_database) as connection:
+            connection.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
+            connection.execute(
+                "CREATE TABLE user_credentials (id INTEGER PRIMARY KEY)"
+            )
+            connection.execute("INSERT INTO users (id) VALUES (7)")
+            connection.execute("INSERT INTO user_credentials (id) VALUES (1)")
+
+        assert migrate_legacy_database(
+            destination, [empty_database, account_database]
+        ) is True
+        with sqlite3.connect(destination) as connection:
+            assert connection.execute("SELECT id FROM users").fetchone() == (7,)
+
+        assert migrate_legacy_database(
+            destination, [empty_database]
+        ) is False
 
     def test_tables_created(self, engine):
         """All five expected tables exist after init_db()."""

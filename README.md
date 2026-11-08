@@ -1,7 +1,7 @@
 # SpeakUp
 
 **SpeakUp** is a desktop application for English speaking practice and confidence improvement.
-Record yourself speaking about a topic, get an AI transcript, and receive detailed feedback on your fluency, vocabulary, grammar, and confidence — all running locally on your machine.
+Record yourself speaking about a topic, get an accurate transcript using OpenAI Whisper, and receive detailed feedback on your fluency, vocabulary, grammar, and confidence. Recordings, transcripts, and practice history are stored on your machine. When OpenAI transcription is enabled (an `OPENAI_API_KEY` is set), each session's audio is sent to OpenAI for transcription; without a key, everything runs locally.
 
 ---
 
@@ -12,6 +12,7 @@ Record yourself speaking about a topic, get an AI transcript, and receive detail
 | Random topic assignment (140 topics, 14 categories) | ✅ |
 | Local email/password accounts with separate progress | ✅ |
 | Camera + microphone recording | ✅ |
+| Speech transcription (OpenAI Whisper API) | ✅ |
 | Local speech transcription (faster-whisper) | ✅ |
 | Fluency, vocabulary, grammar, confidence scoring | ✅ |
 | AI-powered detailed feedback (optional, OpenAI) | ✅ |
@@ -22,7 +23,9 @@ Record yourself speaking about a topic, get an AI transcript, and receive detail
 | Data export (CSV / JSON) | ✅ |
 | Database backup | ✅ |
 | Keyboard shortcuts | ✅ |
-| Fully offline (no online account or cloud required) | ✅ |
+| Offline practice mode with local transcription | ✅ |
+| Automatic fallback to local transcription if OpenAI is unavailable | ✅ |
+| 10-minute recording cap with wrap-up warning (configurable) | ✅ |
 
 ---
 
@@ -71,20 +74,30 @@ Accounts are stored on this device and work offline; they do not sync across dev
 Copy `.env.example` to `.env` and adjust as needed:
 
 ```
-# Optional: enable AI feedback via OpenAI
-# NEVER commit your API key — keep it in .env only
+# Required for the default OpenAI Whisper transcription backend.
+# Keep your API key in .env only; never commit it.
 # OPENAI_API_KEY=sk-...
-# AI_FEEDBACK_BACKEND=llm
+# TRANSCRIPTION_BACKEND=openai_whisper
+# OPENAI_WHISPER_MODEL=whisper-1
 
-# Transcription model size (tiny/base/small/medium/large-v2)
-# Larger = more accurate, slower on CPU
+# Optional local/offline transcription instead
+# TRANSCRIPTION_BACKEND=faster_whisper
 # WHISPER_MODEL_SIZE=base
+
+# Fall back to local transcription when no key is set or the API fails
+# TRANSCRIPTION_LOCAL_FALLBACK=1
+
+# Recordings stop automatically after this many seconds (0 = no cap)
+# MAX_SPEAKING_DURATION=600
+
+# Optional AI feedback via OpenAI
+# AI_FEEDBACK_BACKEND=llm
 
 # Test mode — skips camera/mic/model downloads
 # SPEAKUP_TEST_MODE=1
 ```
 
-All settings have safe defaults. The application runs fully offline without any `.env` file.
+OpenAI Whisper is the default transcription provider. It needs an API key and an internet connection, and it uploads each session's audio to OpenAI. If no key is set, SpeakUp uses local transcription (faster-whisper) instead; if the API call fails (network loss, outage, file over 25 MB), the session is retried locally. Set `TRANSCRIPTION_LOCAL_FALLBACK=0` to disable this. To keep all audio on the device, set `TRANSCRIPTION_BACKEND=faster_whisper`. The local model is downloaded from Hugging Face on first use (about 150 MB for `base`) unless `WHISPER_MODEL_PATH` points to a local copy.
 
 ---
 
@@ -114,7 +127,7 @@ speakup/
 ├── services/
 │   ├── word_service.py       Topic assignment, no-repeat logic
 │   ├── recording_service.py  Camera + microphone capture
-│   ├── transcription_service.py  faster-whisper integration
+│   ├── transcription_service.py  OpenAI Whisper + local provider integration
 │   ├── analysis_service.py   Speech scoring pipeline
 │   ├── feedback_service.py   Local + LLM feedback providers
 │   ├── progress_service.py   Dashboard data aggregation
@@ -166,13 +179,13 @@ Requires PyInstaller: `pip install pyinstaller`
 
 ## Offline Operation
 
-SpeakUp is designed to work completely offline:
+SpeakUp can work completely offline once the local transcription model is available:
 
 | Component | Offline? | Notes |
 |---|---|---|
 | Topic assignment | ✅ | Built-in JSON dataset |
 | Recording | ✅ | Local camera/mic only |
-| Transcription | ✅ | faster-whisper runs on CPU |
+| Transcription | ⚠️ | OpenAI Whisper requires internet and an API key and uploads audio; faster-whisper runs locally and is used automatically as a fallback |
 | Speech analysis | ✅ | Pure Python, no external calls |
 | Local feedback | ✅ | Rule-based, no API |
 | AI feedback | ⚠️ Optional | Requires `OPENAI_API_KEY` |
@@ -188,7 +201,7 @@ SpeakUp is designed to work completely offline:
 | 1 | Foundation, DB schema, navigation shell |
 | 2 | Word/topic system, session state machine |
 | 3 | Camera + microphone recording |
-| 4 | Speech transcription (faster-whisper) |
+| 4 | Speech transcription (OpenAI Whisper, with faster-whisper local fallback) |
 | 5 | Speech analysis engine |
 | 6 | Session results page |
 | 7 | Progress dashboard with charts |

@@ -46,15 +46,23 @@ class RecordingTimerWidget(QFrame):
     minimum_reached = Signal()
     stop_allowed    = Signal(bool)
 
+    # Show a wrap-up warning this many seconds before the automatic stop.
+    MAX_WARNING_SECONDS = 30
+
     def __init__(
         self,
         min_duration: int | None = None,
         parent: QWidget | None = None,
+        max_duration: int | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("TimerWidget")
 
         self._min_duration: int = min_duration or settings.MIN_SPEAKING_DURATION
+        # 0 means "no cap" — mirrors RecordingEngine's auto-stop behaviour.
+        self._max_duration: int = (
+            settings.MAX_SPEAKING_DURATION if max_duration is None else max_duration
+        )
         self._elapsed: int = 0
         self._minimum_was_reached: bool = False
         self._is_active: bool = False
@@ -84,9 +92,10 @@ class RecordingTimerWidget(QFrame):
         self._elapsed_label.setObjectName("ElapsedLabel")
         self._elapsed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self._min_label = QLabel(
-            f"/ {self._format(self._min_duration)} min required"
-        )
+        min_text = f"/ {self._format(self._min_duration)} min required"
+        if self._max_duration > 0:
+            min_text += f" · {self._format(self._max_duration)} max"
+        self._min_label = QLabel(min_text)
         self._min_label.setObjectName("MinLabel")
 
         top_row.addWidget(self._dot_label)
@@ -175,6 +184,13 @@ class RecordingTimerWidget(QFrame):
             remaining = self._min_duration - seconds
             self._status_label.setText(
                 f"{remaining}s remaining — keep speaking!"
+            )
+        elif self._max_duration > 0 and (
+            self._max_duration - seconds <= self.MAX_WARNING_SECONDS
+        ):
+            remaining = max(0, self._max_duration - seconds)
+            self._status_label.setText(
+                f"⏳  Recording stops automatically in {remaining}s — start wrapping up"
             )
         else:
             over = seconds - self._min_duration
